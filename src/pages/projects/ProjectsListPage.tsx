@@ -1,51 +1,79 @@
-import React, { useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Search, Loader2 } from 'lucide-react';
 import ProjectCard from '../../components/projects/ProjectCard';
 import EmptyState from '../../components/ui/EmptyState';
 import { useProjectStore } from '../../stores/projectStore';
+import { useAuth } from '../../contexts/AuthContext';
 
 const ProjectsListPage: React.FC = () => {
-    const { projects, addProject } = useProjectStore();
+    const { user } = useAuth();
+    const { projects, isLoading, error, fetchProjects, addProject, clearError } = useProjectStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [filter, setFilter] = useState<'all' | 'my' | 'recent'>('all');
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [isCreating, setIsCreating] = useState(false);
 
     // Form state
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectUrl, setNewProjectUrl] = useState('');
     const [newProjectDesc, setNewProjectDesc] = useState('');
 
+    // Fetch projects on mount only
+    useEffect(() => {
+        fetchProjects();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const filteredProjects = projects.filter(project =>
         project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         project.website_url.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const handleCreateProject = (e: React.FormEvent) => {
+    const handleCreateProject = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newProjectName.trim() || !newProjectUrl.trim()) return;
+        if (!newProjectName.trim() || !newProjectUrl.trim() || !user) return;
 
-        addProject(newProjectName, newProjectUrl, newProjectDesc || undefined);
+        setIsCreating(true);
+        const result = await addProject(newProjectName, newProjectUrl, newProjectDesc || undefined, user.id);
+        setIsCreating(false);
 
-        // Reset form and close modal
-        setNewProjectName('');
-        setNewProjectUrl('');
-        setNewProjectDesc('');
-        setShowCreateModal(false);
+        if (result) {
+            // Reset form and close modal
+            setNewProjectName('');
+            setNewProjectUrl('');
+            setNewProjectDesc('');
+            setShowCreateModal(false);
+        }
     };
+
+    // Any authenticated user can create projects
+    const canCreateProject = !!user;
 
     return (
         <div className="p-8">
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Projects</h1>
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] text-white rounded-md hover:opacity-90 transition-smooth font-medium"
-                >
-                    <Plus size={18} />
-                    Create Project
-                </button>
+                {canCreateProject && (
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] text-white rounded-md hover:opacity-90 transition-smooth font-medium"
+                    >
+                        <Plus size={18} />
+                        Create Project
+                    </button>
+                )}
             </div>
+
+            {/* Error Banner */}
+            {error && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md flex items-center justify-between">
+                    <p className="text-red-700 text-sm">{error}</p>
+                    <button onClick={clearError} className="text-red-500 hover:text-red-700 text-sm">
+                        Dismiss
+                    </button>
+                </div>
+            )}
 
             {/* Filters and Search */}
             <div className="flex flex-col sm:flex-row gap-4 mb-6">
@@ -75,8 +103,14 @@ const ProjectsListPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Projects Grid */}
-            {filteredProjects.length > 0 ? (
+            {/* Loading State */}
+            {isLoading && projects.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                    <Loader2 className="w-8 h-8 animate-spin text-[var(--color-accent)] mb-4" />
+                    <p className="text-[var(--color-text-secondary)]">Loading projects...</p>
+                </div>
+            ) : filteredProjects.length > 0 ? (
+                /* Projects Grid */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredProjects.map((project) => (
                         <ProjectCard key={project.id} project={project} />
@@ -86,8 +120,8 @@ const ProjectsListPage: React.FC = () => {
                 <EmptyState
                     title="No projects found"
                     description={searchQuery ? 'Try adjusting your search criteria' : 'Create your first project to get started'}
-                    actionLabel={!searchQuery ? 'Create Project' : undefined}
-                    onAction={!searchQuery ? () => setShowCreateModal(true) : undefined}
+                    actionLabel={!searchQuery && canCreateProject ? 'Create Project' : undefined}
+                    onAction={!searchQuery && canCreateProject ? () => setShowCreateModal(true) : undefined}
                 />
             )}
 
@@ -139,15 +173,18 @@ const ProjectsListPage: React.FC = () => {
                                 <button
                                     type="button"
                                     onClick={() => setShowCreateModal(false)}
-                                    className="flex-1 px-4 py-2 border border-[var(--color-border)] rounded-md text-[var(--color-text-secondary)] hover:bg-gray-50 transition-smooth"
+                                    disabled={isCreating}
+                                    className="flex-1 px-4 py-2 border border-[var(--color-border)] rounded-md text-[var(--color-text-secondary)] hover:bg-gray-50 transition-smooth disabled:opacity-50"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
-                                    className="flex-1 px-4 py-2 bg-[var(--color-accent)] text-white rounded-md hover:opacity-90 transition-smooth"
+                                    disabled={isCreating}
+                                    className="flex-1 px-4 py-2 bg-[var(--color-accent)] text-white rounded-md hover:opacity-90 transition-smooth disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
-                                    Create Project
+                                    {isCreating && <Loader2 size={16} className="animate-spin" />}
+                                    {isCreating ? 'Creating...' : 'Create Project'}
                                 </button>
                             </div>
                         </form>

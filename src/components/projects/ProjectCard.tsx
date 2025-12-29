@@ -1,34 +1,60 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { ExternalLink, FileText } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ExternalLink, FileText, Trash2 } from 'lucide-react';
 import type { Project } from '../../types/project';
+import { useProjectStore } from '../../stores/projectStore';
 
 interface ProjectCardProps {
     project: Project;
 }
 
 const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
+    const navigate = useNavigate();
+    const { deleteProject } = useProjectStore();
     const approvedPages = project.pages.filter(p => p.status === 'approved').length;
     const pendingPages = project.pages.filter(p => p.status === 'pending_review').length;
     const totalPages = project.pages.length;
     const progress = totalPages > 0 ? (approvedPages / totalPages) * 100 : 0;
 
+    const handleCardClick = () => {
+        navigate(`/projects/${project.id}`);
+    };
+
+    const handleExternalLinkClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        window.open(project.website_url, '_blank', 'noopener,noreferrer');
+    };
+
+    const handleDeleteClick = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (window.confirm(`Are you sure you want to delete "${project.name}"? This action cannot be undone.`)) {
+            await deleteProject(project.id);
+        }
+    };
+
     return (
-        <Link
-            to={`/projects/${project.id}`}
-            className="block bg-white border border-[var(--color-border)] rounded-lg p-5 hover:shadow-md hover:border-[var(--color-accent)] transition-smooth"
+        <div
+            onClick={handleCardClick}
+            className="block bg-white border border-[var(--color-border)] rounded-lg p-5 hover:shadow-md hover:border-[var(--color-accent)] transition-smooth cursor-pointer"
         >
             <div className="flex items-start justify-between mb-3">
                 <h3 className="text-lg font-semibold text-[var(--color-text-primary)] truncate">{project.name}</h3>
-                <a
-                    href={project.website_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="text-[var(--color-text-tertiary)] hover:text-[var(--color-accent)] transition-smooth"
-                >
-                    <ExternalLink size={16} />
-                </a>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleExternalLinkClick}
+                        className="text-[var(--color-text-tertiary)] hover:text-[var(--color-accent)] transition-smooth"
+                        title="Open website"
+                    >
+                        <ExternalLink size={16} />
+                    </button>
+                    <button
+                        onClick={handleDeleteClick}
+                        className="text-[var(--color-text-tertiary)] hover:text-red-500 transition-smooth"
+                        title="Delete project"
+                    >
+                        <Trash2 size={16} />
+                    </button>
+                </div>
             </div>
 
             <p className="text-sm text-[var(--color-text-tertiary)] mb-3 truncate">{project.website_url}</p>
@@ -61,7 +87,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
             <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                 {approvedPages}/{totalPages} pages approved
             </p>
-        </Link>
+        </div>
     );
 };
 

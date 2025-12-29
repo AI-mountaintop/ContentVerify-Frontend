@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
     Home,
     FolderOpen,
-    CheckSquare,
     Bell,
     Settings,
     LogOut,
@@ -13,12 +12,21 @@ import {
     X
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProjectStore } from '../../stores/projectStore';
 
 const Sidebar: React.FC = () => {
     const location = useLocation();
     const { user, logout } = useAuth();
+    const { projects, fetchProjects } = useProjectStore();
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [projectsExpanded, setProjectsExpanded] = useState(true);
+
+    // Fetch projects on mount if not already loaded
+    useEffect(() => {
+        if (projects.length === 0) {
+            fetchProjects();
+        }
+    }, []);
 
     const isActive = (path: string) => location.pathname === path;
 
@@ -30,6 +38,8 @@ const Sidebar: React.FC = () => {
 
     const getRoleBadgeColor = (role: string) => {
         switch (role) {
+            case 'admin':
+                return 'bg-purple-100 text-purple-700';
             case 'seo_analyst':
                 return 'bg-info-light text-info';
             case 'content_writer':
@@ -41,8 +51,11 @@ const Sidebar: React.FC = () => {
         }
     };
 
+
     const getRoleLabel = (role: string) => {
         switch (role) {
+            case 'admin':
+                return 'Administrator';
             case 'seo_analyst':
                 return 'SEO Analyst';
             case 'content_writer':
@@ -53,6 +66,7 @@ const Sidebar: React.FC = () => {
                 return role;
         }
     };
+
 
     return (
         <aside
@@ -105,18 +119,21 @@ const Sidebar: React.FC = () => {
                         {/* Projects Quick Access */}
                         {item.expandable && projectsExpanded && !isCollapsed && (
                             <div className="ml-8 mt-1 space-y-1">
-                                <Link
-                                    to="/projects/1"
-                                    className="block px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-smooth"
-                                >
-                                    Velocity Pumps
-                                </Link>
-                                <Link
-                                    to="/projects/2"
-                                    className="block px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-smooth"
-                                >
-                                    TechStart Blog
-                                </Link>
+                                {projects.length > 0 ? (
+                                    projects.slice(0, 5).map((project) => (
+                                        <Link
+                                            key={project.id}
+                                            to={`/projects/${project.id}`}
+                                            className="block px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-smooth truncate"
+                                        >
+                                            {project.name}
+                                        </Link>
+                                    ))
+                                ) : (
+                                    <span className="block px-3 py-1.5 text-sm text-text-tertiary italic">
+                                        No projects yet
+                                    </span>
+                                )}
                             </div>
                         )}
                     </div>
@@ -129,7 +146,7 @@ const Sidebar: React.FC = () => {
                     <div className="mb-3">
                         <div className="flex items-center gap-3 mb-2">
                             <img
-                                src={user.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=default'}
+                                src={user.avatar_url || 'https://api.dicebear.com/7.x/avataaars/svg?seed=default'}
                                 alt={user.name}
                                 className="w-10 h-10 rounded-full"
                             />

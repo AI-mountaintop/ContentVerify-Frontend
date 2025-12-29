@@ -1,40 +1,172 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import type { User, UserRole } from '../types/user';
-import { mockUsers } from '../mocks/data';
+import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
     user: User | null;
     isAuthenticated: boolean;
+    isLoading: boolean;
     login: (email: string, password: string) => Promise<void>;
-    logout: () => void;
-    switchRole: (role: UserRole) => void; // For demo/dev only
+    logout: () => Promise<void>;
+    signUp: (email: string, password: string, name: string, role?: UserRole) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [user, setUser] = useState<User | null>(mockUsers[0]); // Default to SEO Analyst for demo
+    const [user, setUser] = useState<User | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const fetchingRef = useRef(false);
 
-    const login = async (email: string, _password: string) => {
-        // Mock login - find user by email
-        const foundUser = mockUsers.find(u => u.email === email);
-        if (foundUser) {
-            setUser(foundUser);
-        } else {
-            throw new Error('Invalid credentials');
+    // Helper to create a user from auth session data (fallback)
+    const createUserFromSession = (authUser: any): User => ({
+        id: authUser.id,
+        email: authUser.email || '',
+        name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
+        role: (authUser.user_metadata?.role as UserRole) || 'content_writer',
+        avatar_url: authUser.user_metadata?.avatar_url || undefined,
+        created_at: authUser.created_at,
+        updated_at: authUser.updated_at || authUser.created_at,
+    });
+
+    useEffect(() => {
+        let mounted = true;
+
+        const initAuth = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+
+                if (!mounted) return;
+
+                if (session?.user) {
+                    // IMMEDIATELY set a fallback user from session to prevent infinite loading
+                    const fallbackUser = createUserFromSession(session.user);
+                    setUser(fallbackUser);
+                    setIsLoading(false);
+
+                    // Then try to fetch the full profile (non-blocking)
+                    fetchUserProfile(session.user.id);
+                } else {
+                    setIsLoading(false);
+                }
+            } catch (error) {
+                console.error('Error initializing auth:', error);
+                if (mounted) setIsLoading(false);
+            }
+        };
+
+        initAuth();
+
+        // Listen for auth changes
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange(async (event, session) => {
+            if (!mounted) return;
+
+            if (event === 'SIGNED_IN' && session?.user) {
+                // Set fallback user immediately
+                const fallbackUser = createUserFromSession(session.user);
+                setUser(fallbackUser);
+                setIsLoading(false);
+
+                // Then fetch full profile
+                if (!fetchingRef.current) {
+                    fetchUserProfile(session.user.id);
+                }
+            } else if (event === 'SIGNED_OUT') {
+                setUser(null);
+                setIsLoading(false);
+            }
+        });
+
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
+    }, []);
+
+    const fetchUserProfile = async (userId: string) => {
+        if (fetchingRef.current) return;
+        fetchingRef.current = true;
+
+        console.log('Fetching user profile for:', userId);
+        try {
+            const { data, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', userId)
+                .single();
+
+            console.log('Profile fetch result:', { data, error });
+
+            // Only update if we got valid data - keeps the fallback user otherwise
+            if (data && !error) {
+                setUser({
+                    id: data.id,
+                    email: data.email,
+                    name: data.name,
+                    role: data.role as UserRole,
+                    avatar_url: data.avatar_url || undefined,
+                    created_at: data.created_at,
+                    updated_at: data.updated_at,
+                });
+            } else if (error) {
+                console.warn('Could not fetch user profile, using fallback:', error.message);
+            }
+        } catch (err) {
+            console.warn('Error fetching user profile, using fallback:', err);
+        } finally {
+            fetchingRef.current = false;
         }
     };
 
-    const logout = () => {
+    const login = async (email: string, password: string) => {
+        setIsLoading(true);
+        const { error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
+        if (error) {
+            setIsLoading(false);
+            throw error;
+        }
+        // User profile will be fetched by onAuthStateChange
+    };
+
+    const logout = async () => {
+        setIsLoading(true);
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+            setIsLoading(false);
+            throw error;
+        }
         setUser(null);
+        setIsLoading(false);
     };
 
-    const switchRole = (role: UserRole) => {
-        const foundUser = mockUsers.find(u => u.role === role);
-        if (foundUser) {
-            setUser(foundUser);
+    const signUp = async (
+        email: string,
+        password: string,
+        name: string,
+        role: UserRole = 'content_writer'
+    ) => {
+        setIsLoading(true);
+        const { error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                data: {
+                    name,
+                    role,
+                },
+            },
+        });
+        if (error) {
+            setIsLoading(false);
+            throw error;
         }
+        // User profile will be created by database trigger and fetched by onAuthStateChange
     };
 
     return (
@@ -42,9 +174,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             value={{
                 user,
                 isAuthenticated: !!user,
+                isLoading,
                 login,
                 logout,
-                switchRole,
+                signUp,
             }}
         >
             {children}

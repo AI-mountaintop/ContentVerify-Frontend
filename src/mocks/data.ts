@@ -7,21 +7,21 @@ export const mockUsers: User[] = [
         name: 'Alex Rivera',
         email: 'alex@example.com',
         role: 'seo_analyst',
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex'
+        avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex'
     },
     {
         id: '2',
         name: 'Jordan Lee',
         email: 'jordan@example.com',
         role: 'content_writer',
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jordan'
+        avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jordan'
     },
     {
         id: '3',
         name: 'Sam Chen',
         email: 'sam@example.com',
         role: 'content_verifier',
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sam'
+        avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sam'
     },
 ];
 
@@ -229,37 +229,5 @@ export const mockProjects: Project[] = [
                 updated_at: '2024-01-15T10:15:00Z',
             },
         ],
-    },
-    {
-        id: '2',
-        name: 'TechStart Blog',
-        website_url: 'https://techstart.io/blog',
-        description: 'Technology startup blog content',
-        created_by: '2',
-        created_at: '2024-01-10T08:00:00Z',
-        updated_at: '2024-01-18T10:00:00Z',
-        members: [],
-        pages: [
-            {
-                id: '2-1',
-                project_id: '2',
-                name: 'Getting Started with AI',
-                slug: 'getting-started-ai',
-                status: 'processing',
-                created_at: '2024-01-10T08:30:00Z',
-                updated_at: '2024-01-18T10:00:00Z',
-            },
-        ],
-    },
-    {
-        id: '3',
-        name: 'GreenLeaf E-commerce',
-        website_url: 'https://greenleaf.shop',
-        description: 'Sustainable products online store',
-        created_by: '1',
-        created_at: '2024-01-05T12:00:00Z',
-        updated_at: '2024-01-12T16:00:00Z',
-        members: [],
-        pages: [],
     },
 ];

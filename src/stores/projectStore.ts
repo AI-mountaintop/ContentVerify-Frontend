@@ -1,301 +1,481 @@
 import { create } from 'zustand';
-import type { Project, Page, SEOData, ContentData, PageStatus } from '../types/project';
-import { mockProjects, mockUsers } from '../mocks/data';
+import type { Project, Page, PageStatus } from '../types/project';
+import {
+    getProjects,
+    getProjectById,
+    createProject as createProjectAPI,
+    updateProject as updateProjectAPI,
+    deleteProject as deleteProjectAPI,
+} from '../services/projectService';
+import {
+    getPages,
+    getPageById,
+    createPage as createPageAPI,
+    updatePage as updatePageAPI,
+    updatePageStatus as updatePageStatusAPI,
+    deletePage as deletePageAPI,
+} from '../services/pageService';
+import {
+    uploadSEOData as uploadSEODataAPI,
+    getSEOData,
+} from '../services/seoService';
+import {
+    uploadContentData as uploadContentDataAPI,
+    type ParsedContent,
+} from '../services/contentService';
 
-interface ProjectStore {
+interface ProjectState {
     projects: Project[];
+    isLoading: boolean;
+    error: string | null;
+
+    // Fetch operations
+    fetchProjects: () => Promise<void>;
+    fetchProjectById: (projectId: string) => Promise<Project | null>;
 
     // Project operations
-    addProject: (name: string, websiteUrl: string, description?: string) => Project;
-    updateProject: (projectId: string, updates: Partial<Project>) => void;
-    deleteProject: (projectId: string) => void;
+    addProject: (name: string, websiteUrl: string, description: string | undefined, userId: string) => Promise<Project | null>;
+    updateProject: (projectId: string, updates: Partial<Project>) => Promise<void>;
+    deleteProject: (projectId: string) => Promise<void>;
 
     // Page operations
-    addPage: (projectId: string, name: string, slug: string) => Page | null;
-    updatePage: (projectId: string, pageId: string, updates: Partial<Page>) => void;
-    deletePage: (projectId: string, pageId: string) => void;
+    addPage: (projectId: string, name: string, slug: string) => Promise<Page | null>;
+    updatePageStatus: (projectId: string, pageId: string, status: PageStatus) => Promise<void>;
+    deletePage: (projectId: string, pageId: string) => Promise<void>;
 
-    // Data upload operations
-    uploadSEOKeywords: (projectId: string, pageId: string, primaryKeywords: string[], secondaryKeywords: string[], userId: string) => void;
-    uploadContent: (projectId: string, pageId: string, content: ContentData['parsed_content'], userId: string, sheetUrl?: string) => void;
+    // SEO operations
+    uploadSEOKeywords: (
+        projectId: string,
+        pageId: string,
+        primaryKeywords: string[],
+        secondaryKeywords: string[]
+    ) => Promise<void>;
 
-    // Status operations
-    updatePageStatus: (projectId: string, pageId: string, status: PageStatus) => void;
-    triggerAnalysis: (projectId: string, pageId: string) => void;
+    // Content operations
+    uploadContent: (
+        projectId: string,
+        pageId: string,
+        parsedContent: ParsedContent,
+        sheetUrl?: string
+    ) => Promise<void>;
 
-    // Review operations
-    approveContent: (projectId: string, pageId: string) => void;
-    rejectContent: (projectId: string, pageId: string) => void;
-    requestRevision: (projectId: string, pageId: string, reviseSEO: boolean, reviseContent: boolean) => void;
+    // Verifier operations
+    approveContent: (projectId: string, pageId: string) => Promise<void>;
+    rejectContent: (projectId: string, pageId: string) => Promise<void>;
+    requestRevision: (projectId: string, pageId: string, reviseSEO: boolean, reviseContent: boolean) => Promise<void>;
 
-    // Comments
-    addComment: (projectId: string, pageId: string, userId: string, text: string) => void;
-
-    // Getters
+    // Getters (sync, from cached data)
     getProject: (projectId: string) => Project | undefined;
     getPage: (projectId: string, pageId: string) => Page | undefined;
+
+    // Clear error
+    clearError: () => void;
 }
 
-export const useProjectStore = create<ProjectStore>((set, get) => ({
-    projects: [...mockProjects],
+// Helper to convert DB format to app format
+function convertDbProjectToApp(dbProject: any): Project {
+    return {
+        id: dbProject.id,
+        name: dbProject.name,
+        website_url: dbProject.website_url,
+        description: dbProject.description || undefined,
+        created_by: dbProject.created_by,
+        created_at: dbProject.created_at,
+        updated_at: dbProject.updated_at,
+        pages: (dbProject.pages || []).map((p: any) => ({
+            id: p.id,
+            project_id: dbProject.id,
+            name: p.name,
+            slug: p.slug,
+            status: p.status,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+            seo_data: p.seo_data ? {
+                id: p.seo_data.id,
+                page_id: p.id,
+                primaryKeywords: p.seo_data.primary_keywords || [],
+                secondaryKeywords: p.seo_data.secondary_keywords || [],
+                uploaded_by: p.seo_data.uploaded_by,
+                uploaded_at: p.seo_data.uploaded_at,
+                version: p.seo_data.version,
+            } : undefined,
+            content_data: p.content_data ? {
+                id: p.content_data.id,
+                page_id: p.id,
+                google_sheet_url: p.content_data.google_sheet_url || undefined,
+                parsed_content: p.content_data.parsed_content || {},
+                uploaded_by: p.content_data.uploaded_by,
+                uploaded_at: p.content_data.uploaded_at,
+                version: p.content_data.version,
+            } : undefined,
+            analysis: p.analysis_results ? {
+                id: p.analysis_results.id,
+                page_id: p.id,
+                overall_score: p.analysis_results.overall_score,
+                seo_score: p.analysis_results.seo_score,
+                readability_score: p.analysis_results.readability_score,
+                keyword_density_score: p.analysis_results.keyword_density_score,
+                grammar_score: p.analysis_results.grammar_score,
+                content_intent_score: p.analysis_results.content_intent_score,
+                technical_health_score: p.analysis_results.technical_health_score,
+                detailed_feedback: p.analysis_results.detailed_feedback,
+            } : undefined,
+        })),
+        members: dbProject.members || [],
+    };
+}
 
-    addProject: (name, websiteUrl, description) => {
-        const newProject: Project = {
-            id: `project-${Date.now()}`,
-            name,
-            website_url: websiteUrl,
-            description,
-            created_by: mockUsers[0].id,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            pages: [],
-            members: [],
-        };
+export const useProjectStore = create<ProjectState>((set, get) => ({
+    projects: [],
+    isLoading: false,
+    error: null,
 
-        set((state) => ({
-            projects: [...state.projects, newProject],
-        }));
-
-        return newProject;
-    },
-
-    updateProject: (projectId, updates) => {
-        set((state) => ({
-            projects: state.projects.map((p) =>
-                p.id === projectId
-                    ? { ...p, ...updates, updated_at: new Date().toISOString() }
-                    : p
-            ),
-        }));
-    },
-
-    deleteProject: (projectId) => {
-        set((state) => ({
-            projects: state.projects.filter((p) => p.id !== projectId),
-        }));
-    },
-
-    addPage: (projectId, name, slug) => {
-        const newPage: Page = {
-            id: `page-${Date.now()}`,
-            project_id: projectId,
-            name,
-            slug,
-            status: 'draft',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-        };
-
-        set((state) => ({
-            projects: state.projects.map((p) =>
-                p.id === projectId
-                    ? {
-                        ...p,
-                        pages: [...p.pages, newPage],
-                        updated_at: new Date().toISOString(),
-                    }
-                    : p
-            ),
-        }));
-
-        return newPage;
-    },
-
-    updatePage: (projectId, pageId, updates) => {
-        set((state) => ({
-            projects: state.projects.map((p) =>
-                p.id === projectId
-                    ? {
-                        ...p,
-                        pages: p.pages.map((page) =>
-                            page.id === pageId
-                                ? { ...page, ...updates, updated_at: new Date().toISOString() }
-                                : page
-                        ),
-                        updated_at: new Date().toISOString(),
-                    }
-                    : p
-            ),
-        }));
-    },
-
-    deletePage: (projectId, pageId) => {
-        set((state) => ({
-            projects: state.projects.map((p) =>
-                p.id === projectId
-                    ? {
-                        ...p,
-                        pages: p.pages.filter((page) => page.id !== pageId),
-                        updated_at: new Date().toISOString(),
-                    }
-                    : p
-            ),
-        }));
-    },
-
-    uploadSEOKeywords: (projectId, pageId, primaryKeywords, secondaryKeywords, userId) => {
-        const page = get().getPage(projectId, pageId);
-        const currentVersion = page?.seo_data?.version || 0;
-
-        const seoData: SEOData = {
-            id: `seo-${Date.now()}`,
-            page_id: pageId,
-            primaryKeywords,
-            secondaryKeywords,
-            uploaded_by: userId,
-            uploaded_at: new Date().toISOString(),
-            version: currentVersion + 1,
-        };
-
-        // Determine new status
-        const hasContent = !!page?.content_data;
-        let newStatus: PageStatus = hasContent ? 'processing' : 'awaiting_content';
-
-        get().updatePage(projectId, pageId, {
-            seo_data: seoData,
-            status: newStatus
-        });
-
-        // If both SEO and Content are uploaded, trigger analysis
-        if (hasContent) {
-            setTimeout(() => get().triggerAnalysis(projectId, pageId), 2000);
+    fetchProjects: async () => {
+        console.log('fetchProjects: starting...');
+        set({ isLoading: true, error: null });
+        try {
+            console.log('fetchProjects: calling getProjects()...');
+            const dbProjects = await getProjects();
+            console.log('fetchProjects: got projects:', dbProjects);
+            const projects = dbProjects.map(convertDbProjectToApp);
+            console.log('fetchProjects: converted projects:', projects);
+            set({ projects, isLoading: false });
+        } catch (error: any) {
+            console.error('fetchProjects: Error:', error);
+            set({ error: error.message, isLoading: false });
         }
     },
 
-    uploadContent: (projectId, pageId, content, userId, sheetUrl) => {
-        const page = get().getPage(projectId, pageId);
-        const currentVersion = page?.content_data?.version || 0;
+    fetchProjectById: async (projectId: string) => {
+        set({ isLoading: true, error: null });
+        try {
+            const dbProject = await getProjectById(projectId);
+            if (!dbProject) {
+                set({ isLoading: false });
+                return null;
+            }
 
-        const contentData: ContentData = {
-            id: `content-${Date.now()}`,
-            page_id: pageId,
-            google_sheet_url: sheetUrl,
-            parsed_content: content,
-            uploaded_by: userId,
-            uploaded_at: new Date().toISOString(),
-            version: currentVersion + 1,
-        };
+            // Also fetch pages with full details
+            const pages = await getPages(projectId);
+            const project = convertDbProjectToApp({ ...dbProject, pages });
 
-        // Determine new status
-        const hasSEO = !!page?.seo_data;
-        let newStatus: PageStatus = hasSEO ? 'processing' : 'awaiting_seo';
+            // Update the project in the store
+            set((state) => ({
+                projects: state.projects.some(p => p.id === projectId)
+                    ? state.projects.map(p => p.id === projectId ? project : p)
+                    : [...state.projects, project],
+                isLoading: false,
+            }));
 
-        get().updatePage(projectId, pageId, {
-            content_data: contentData,
-            status: newStatus
-        });
-
-        // If both SEO and Content are uploaded, trigger analysis
-        if (hasSEO) {
-            setTimeout(() => get().triggerAnalysis(projectId, pageId), 2000);
+            return project;
+        } catch (error: any) {
+            console.error('Error fetching project:', error);
+            set({ error: error.message, isLoading: false });
+            return null;
         }
     },
 
-    updatePageStatus: (projectId, pageId, status) => {
-        get().updatePage(projectId, pageId, { status });
+    addProject: async (name, websiteUrl, description, userId) => {
+        console.log('addProject: starting...', { name, websiteUrl, description, userId });
+        set({ isLoading: true, error: null });
+        try {
+            console.log('addProject: calling createProjectAPI...');
+            const dbProject = await createProjectAPI({
+                name,
+                website_url: websiteUrl,
+                description,
+                created_by: userId,
+            });
+            console.log('addProject: got dbProject:', dbProject);
+
+            const project = convertDbProjectToApp(dbProject);
+            console.log('addProject: converted project:', project);
+            set((state) => ({
+                projects: [...state.projects, project],
+                isLoading: false,
+            }));
+
+            return project;
+        } catch (error: any) {
+            console.error('addProject: Error:', error);
+            set({ error: error.message, isLoading: false });
+            return null;
+        }
     },
 
-    triggerAnalysis: (projectId, pageId) => {
-        const page = get().getPage(projectId, pageId);
-        if (!page || !page.seo_data || !page.content_data) return;
+    updateProject: async (projectId, updates) => {
+        set({ isLoading: true, error: null });
+        try {
+            await updateProjectAPI(projectId, {
+                name: updates.name,
+                website_url: updates.website_url,
+                description: updates.description,
+            });
 
-        // Simulate AI analysis (in real app, this would call n8n webhook)
-        const seoScore = Math.floor(Math.random() * 25) + 75;
-        const readabilityScore = Math.floor(Math.random() * 25) + 75;
-        const keywordDensityScore = Math.floor(Math.random() * 25) + 70;
-        const grammarScore = Math.floor(Math.random() * 20) + 80;
-        const contentIntentScore = Math.floor(Math.random() * 25) + 75;
-        const technicalHealthScore = Math.floor(Math.random() * 20) + 80;
-
-        // Calculate overall as weighted average
-        const overallScore = Math.round(
-            (seoScore * 0.2) +
-            (readabilityScore * 0.15) +
-            (keywordDensityScore * 0.15) +
-            (grammarScore * 0.15) +
-            (contentIntentScore * 0.2) +
-            (technicalHealthScore * 0.15)
-        );
-
-        const mockAnalysis = {
-            id: `analysis-${Date.now()}`,
-            page_id: pageId,
-            overall_score: overallScore,
-            seo_score: seoScore,
-            readability_score: readabilityScore,
-            keyword_density_score: keywordDensityScore,
-            grammar_score: grammarScore,
-            content_intent_score: contentIntentScore,
-            technical_health_score: technicalHealthScore,
-            keyword_analysis: [
-                ...page.seo_data.primaryKeywords.map((kw) => ({
-                    keyword: kw,
-                    type: 'primary' as const,
-                    frequency: Math.floor(Math.random() * 15) + 5,
-                    density: `${(Math.random() * 2 + 1).toFixed(1)}%`,
-                    in_title: Math.random() > 0.2,
-                    in_h1: Math.random() > 0.3,
-                    in_first_paragraph: Math.random() > 0.2,
-                })),
-                ...page.seo_data.secondaryKeywords.map((kw) => ({
-                    keyword: kw,
-                    type: 'secondary' as const,
-                    frequency: Math.floor(Math.random() * 10) + 1,
-                    density: `${(Math.random() * 1.5 + 0.3).toFixed(1)}%`,
-                    in_title: Math.random() > 0.5,
-                    in_h1: Math.random() > 0.6,
-                    in_first_paragraph: Math.random() > 0.4,
-                })),
-            ],
-            suggestions: [
-                {
-                    type: 'info' as const,
-                    category: 'SEO',
-                    message: 'Good keyword usage throughout the content',
-                },
-                {
-                    type: 'warning' as const,
-                    category: 'Readability',
-                    message: 'Consider breaking up longer paragraphs for better readability',
-                },
-                {
-                    type: grammarScore >= 90 ? 'info' as const : 'warning' as const,
-                    category: 'Grammar',
-                    message: grammarScore >= 90 ? 'Excellent grammar and writing quality' : 'Minor grammatical improvements suggested',
-                },
-                {
-                    type: technicalHealthScore >= 85 ? 'info' as const : 'warning' as const,
-                    category: 'Technical',
-                    message: technicalHealthScore >= 85 ? 'Meta tags and structure are well optimized' : 'Consider adding missing meta description',
-                },
-            ],
-            highlighted_content: `<h1>${page.content_data.parsed_content.h1?.[0] || 'Page Title'}</h1>
-        <p>${page.content_data.parsed_content.paragraphs?.[0] || 'Content paragraph...'}</p>`,
-            processed_at: new Date().toISOString(),
-        };
-
-        get().updatePage(projectId, pageId, {
-            analysis: mockAnalysis,
-            status: 'pending_review',
-        });
+            set((state) => ({
+                projects: state.projects.map((p) =>
+                    p.id === projectId ? { ...p, ...updates } : p
+                ),
+                isLoading: false,
+            }));
+        } catch (error: any) {
+            console.error('Error updating project:', error);
+            set({ error: error.message, isLoading: false });
+        }
     },
 
-    approveContent: (projectId, pageId) => {
-        get().updatePage(projectId, pageId, { status: 'approved' });
+    deleteProject: async (projectId) => {
+        set({ isLoading: true, error: null });
+        try {
+            await deleteProjectAPI(projectId);
+            set((state) => ({
+                projects: state.projects.filter((p) => p.id !== projectId),
+                isLoading: false,
+            }));
+        } catch (error: any) {
+            console.error('Error deleting project:', error);
+            set({ error: error.message, isLoading: false });
+        }
     },
 
-    rejectContent: (projectId, pageId) => {
-        get().updatePage(projectId, pageId, { status: 'rejected' });
+    addPage: async (projectId, name, slug) => {
+        set({ isLoading: true, error: null });
+        try {
+            const dbPage = await createPageAPI({
+                project_id: projectId,
+                name,
+                slug,
+            });
+
+            const newPage: Page = {
+                id: dbPage.id,
+                project_id: projectId,
+                name: dbPage.name,
+                slug: dbPage.slug,
+                status: dbPage.status,
+                created_at: dbPage.created_at,
+                updated_at: dbPage.updated_at,
+            };
+
+            set((state) => ({
+                projects: state.projects.map((p) =>
+                    p.id === projectId
+                        ? { ...p, pages: [...(p.pages || []), newPage] }
+                        : p
+                ),
+                isLoading: false,
+            }));
+
+            return newPage;
+        } catch (error: any) {
+            console.error('Error creating page:', error);
+            set({ error: error.message, isLoading: false });
+            return null;
+        }
     },
 
-    requestRevision: (projectId, pageId, _reviseSEO, _reviseContent) => {
-        get().updatePage(projectId, pageId, { status: 'revision_requested' });
+    updatePageStatus: async (projectId, pageId, status) => {
+        set({ isLoading: true, error: null });
+        try {
+            await updatePageStatusAPI(pageId, status);
+
+            set((state) => ({
+                projects: state.projects.map((p) =>
+                    p.id === projectId
+                        ? {
+                            ...p,
+                            pages: p.pages?.map((page) =>
+                                page.id === pageId ? { ...page, status } : page
+                            ),
+                        }
+                        : p
+                ),
+                isLoading: false,
+            }));
+        } catch (error: any) {
+            console.error('Error updating page status:', error);
+            set({ error: error.message, isLoading: false });
+        }
     },
 
-    addComment: (_projectId, _pageId, _userId, _text) => {
-        // Comments would be stored in a separate array on the page
-        // For now, this is a placeholder
-        console.log('Comment added');
+    deletePage: async (projectId, pageId) => {
+        set({ isLoading: true, error: null });
+        try {
+            await deletePageAPI(pageId);
+
+            set((state) => ({
+                projects: state.projects.map((p) =>
+                    p.id === projectId
+                        ? { ...p, pages: p.pages?.filter((page) => page.id !== pageId) }
+                        : p
+                ),
+                isLoading: false,
+            }));
+        } catch (error: any) {
+            console.error('Error deleting page:', error);
+            set({ error: error.message, isLoading: false });
+        }
+    },
+
+    uploadSEOKeywords: async (projectId, pageId, primaryKeywords, secondaryKeywords) => {
+        set({ isLoading: true, error: null });
+        try {
+            const seoData = await uploadSEODataAPI({
+                page_id: pageId,
+                primary_keywords: primaryKeywords,
+                secondary_keywords: secondaryKeywords,
+            });
+
+            set((state) => ({
+                projects: state.projects.map((p) =>
+                    p.id === projectId
+                        ? {
+                            ...p,
+                            pages: p.pages?.map((page) =>
+                                page.id === pageId
+                                    ? {
+                                        ...page,
+                                        status: 'awaiting_content' as PageStatus,
+                                        seo_data: {
+                                            id: seoData.id,
+                                            page_id: pageId,
+                                            primaryKeywords: seoData.primary_keywords,
+                                            secondaryKeywords: seoData.secondary_keywords,
+                                            uploaded_by: seoData.uploaded_by,
+                                            uploaded_at: seoData.uploaded_at,
+                                            version: seoData.version,
+                                        },
+                                    }
+                                    : page
+                            ),
+                        }
+                        : p
+                ),
+                isLoading: false,
+            }));
+        } catch (error: any) {
+            console.error('Error uploading SEO keywords:', error);
+            set({ error: error.message, isLoading: false });
+        }
+    },
+
+    uploadContent: async (projectId, pageId, parsedContent, sheetUrl) => {
+        set({ isLoading: true, error: null });
+        try {
+            const contentData = await uploadContentDataAPI({
+                page_id: pageId,
+                parsed_content: parsedContent,
+                google_sheet_url: sheetUrl,
+            });
+
+            // Check if SEO data exists to determine new status
+            const page = get().getPage(projectId, pageId);
+            const hasSEO = !!page?.seo_data;
+            const newStatus: PageStatus = hasSEO ? 'pending_review' : 'awaiting_seo';
+
+            set((state) => ({
+                projects: state.projects.map((p) =>
+                    p.id === projectId
+                        ? {
+                            ...p,
+                            pages: p.pages?.map((pg) =>
+                                pg.id === pageId
+                                    ? {
+                                        ...pg,
+                                        status: newStatus,
+                                        content_data: {
+                                            id: contentData.id,
+                                            page_id: pageId,
+                                            google_sheet_url: contentData.google_sheet_url || undefined,
+                                            parsed_content: contentData.parsed_content as any,
+                                            uploaded_by: contentData.uploaded_by,
+                                            uploaded_at: contentData.uploaded_at,
+                                            version: contentData.version,
+                                        },
+                                    }
+                                    : pg
+                            ),
+                        }
+                        : p
+                ),
+                isLoading: false,
+            }));
+        } catch (error: any) {
+            console.error('Error uploading content:', error);
+            set({ error: error.message, isLoading: false });
+        }
+    },
+
+    approveContent: async (projectId, pageId) => {
+        set({ isLoading: true, error: null });
+        try {
+            await updatePageStatusAPI(pageId, 'approved');
+
+            set((state) => ({
+                projects: state.projects.map((p) =>
+                    p.id === projectId
+                        ? {
+                            ...p,
+                            pages: p.pages?.map((pg) =>
+                                pg.id === pageId ? { ...pg, status: 'approved' as PageStatus } : pg
+                            ),
+                        }
+                        : p
+                ),
+                isLoading: false,
+            }));
+        } catch (error: any) {
+            console.error('Error approving content:', error);
+            set({ error: error.message, isLoading: false });
+        }
+    },
+
+    rejectContent: async (projectId, pageId) => {
+        set({ isLoading: true, error: null });
+        try {
+            await updatePageStatusAPI(pageId, 'rejected');
+
+            set((state) => ({
+                projects: state.projects.map((p) =>
+                    p.id === projectId
+                        ? {
+                            ...p,
+                            pages: p.pages?.map((pg) =>
+                                pg.id === pageId ? { ...pg, status: 'rejected' as PageStatus } : pg
+                            ),
+                        }
+                        : p
+                ),
+                isLoading: false,
+            }));
+        } catch (error: any) {
+            console.error('Error rejecting content:', error);
+            set({ error: error.message, isLoading: false });
+        }
+    },
+
+    requestRevision: async (projectId, pageId, _reviseSEO, _reviseContent) => {
+        set({ isLoading: true, error: null });
+        try {
+            await updatePageStatusAPI(pageId, 'revision_requested');
+
+            set((state) => ({
+                projects: state.projects.map((p) =>
+                    p.id === projectId
+                        ? {
+                            ...p,
+                            pages: p.pages?.map((pg) =>
+                                pg.id === pageId ? { ...pg, status: 'revision_requested' as PageStatus } : pg
+                            ),
+                        }
+                        : p
+                ),
+                isLoading: false,
+            }));
+        } catch (error: any) {
+            console.error('Error requesting revision:', error);
+            set({ error: error.message, isLoading: false });
+        }
     },
 
     getProject: (projectId) => {
@@ -303,7 +483,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     },
 
     getPage: (projectId, pageId) => {
-        const project = get().getProject(projectId);
-        return project?.pages.find((p) => p.id === pageId);
+        const project = get().projects.find((p) => p.id === projectId);
+        return project?.pages?.find((page) => page.id === pageId);
+    },
+
+    clearError: () => {
+        set({ error: null });
     },
 }));

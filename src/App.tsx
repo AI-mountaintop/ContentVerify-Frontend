@@ -10,10 +10,26 @@ import PageDetailPage from './pages/projects/PageDetailPage';
 import MyTasksPage from './pages/tasks/MyTasksPage';
 import ActivityPage from './pages/activity/ActivityPage';
 import SettingsPage from './pages/settings/SettingsPage';
+import { Loader2 } from 'lucide-react';
 
-// Protected Route wrapper
+// Loading component for auth check
+const LoadingScreen: React.FC = () => (
+  <div className="min-h-screen bg-bg-primary flex items-center justify-center">
+    <div className="text-center">
+      <Loader2 className="w-10 h-10 animate-spin text-accent mx-auto mb-4" />
+      <p className="text-text-secondary">Loading...</p>
+    </div>
+  </div>
+);
+
+// Protected Route wrapper with loading state
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
 };
 

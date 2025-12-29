@@ -1,11 +1,13 @@
-export type UserRole = 'seo_analyst' | 'content_writer' | 'content_verifier';
+export type UserRole = 'admin' | 'seo_analyst' | 'content_writer' | 'content_verifier';
 
 export interface User {
     id: string;
     name: string;
     email: string;
     role: UserRole;
-    avatar?: string;
+    avatar_url?: string;
+    created_at?: string;
+    updated_at?: string;
 }
 
 export interface ProjectMember {

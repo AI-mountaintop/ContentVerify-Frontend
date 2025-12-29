@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, FileText, Tag, CheckCircle, XCircle, RotateCcw, MessageSquare, Loader2, TrendingUp, Minus } from 'lucide-react';
 import StatusBadge from '../../components/ui/StatusBadge';
 import ScoreDisplay from '../../components/ui/ScoreDisplay';
 import { useAuth } from '../../contexts/AuthContext';
 import { useProjectStore } from '../../stores/projectStore';
+import { getKeywordMetrics } from '../../services/seoService';
 
 const PageDetailPage: React.FC = () => {
     const { projectId, pageId } = useParams<{ projectId: string; pageId: string }>();
@@ -29,9 +30,29 @@ const PageDetailPage: React.FC = () => {
     const [revisionSEO, setRevisionSEO] = useState(true);
     const [revisionContent, setRevisionContent] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [keywordMetrics, setKeywordMetrics] = useState<Record<string, any>>({});
 
     const project = projects.find(p => p.id === projectId);
     const page = project?.pages.find(p => p.id === pageId);
+
+    // Fetch keyword metrics when seo_data exists - MUST be before any early return
+    useEffect(() => {
+        const fetchMetrics = async () => {
+            if (page?.seo_data?.id) {
+                try {
+                    const metrics = await getKeywordMetrics(page.seo_data.id);
+                    const metricsMap: Record<string, any> = {};
+                    metrics.forEach(m => {
+                        metricsMap[m.keyword.toLowerCase()] = m;
+                    });
+                    setKeywordMetrics(metricsMap);
+                } catch (error) {
+                    console.error('Error fetching keyword metrics:', error);
+                }
+            }
+        };
+        fetchMetrics();
+    }, [page?.seo_data?.id]);
 
     if (!project || !page) {
         return (
@@ -46,6 +67,8 @@ const PageDetailPage: React.FC = () => {
     const hasContent = !!page.content_data;
     const isVerifier = user?.role === 'content_verifier';
     const isContentWriter = user?.role === 'content_writer';
+    const isSEOAnalyst = user?.role === 'seo_analyst';
+    const isAdmin = user?.role === 'admin';
 
     // Helper function to convert percentage to letter grade
     const getLetterGrade = (score: number): { grade: string; color: string } => {
@@ -56,15 +79,32 @@ const PageDetailPage: React.FC = () => {
         return { grade: 'F', color: 'text-red-600' };
     };
 
-    // Mock SEMrush-style keyword stats
+    // Get keyword stats - use real data if available, otherwise mock
     const getKeywordStats = (keyword: string) => {
-        // Generate consistent mock data based on keyword hash
+        const realMetrics = keywordMetrics[keyword.toLowerCase()];
+
+        if (realMetrics) {
+            return {
+                searchVolume: realMetrics.search_volume || 0,
+                difficulty: realMetrics.competition_index || 0,
+                cpc: realMetrics.cpc?.toFixed(2) || '0.00',
+                competition: realMetrics.competition || 'N/A',
+                lowBid: realMetrics.low_top_of_page_bid?.toFixed(2) || '0.00',
+                highBid: realMetrics.high_top_of_page_bid?.toFixed(2) || '0.00',
+                isReal: true
+            };
+        }
+
+        // Fallback to mock data if no real metrics
         const hash = keyword.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
         return {
             searchVolume: Math.floor((hash % 50) * 100 + 500),
             difficulty: Math.floor(hash % 100),
             cpc: ((hash % 50) / 10 + 0.5).toFixed(2),
-            trend: hash % 2 === 0 ? 'up' : 'stable'
+            competition: ['LOW', 'MEDIUM', 'HIGH'][Math.floor(hash % 3)],
+            lowBid: ((hash % 20) / 10).toFixed(2),
+            highBid: ((hash % 50) / 10 + 2).toFixed(2),
+            isReal: false
         };
     };
 
@@ -181,7 +221,7 @@ const PageDetailPage: React.FC = () => {
 
         const primaryKeywords = primaryKeywordsInput.split('\n').map(k => k.trim()).filter(k => k);
         const secondaryKeywords = secondaryKeywordsInput.split('\n').map(k => k.trim()).filter(k => k);
-        uploadSEOKeywords(projectId, pageId, primaryKeywords, secondaryKeywords, user.id);
+        uploadSEOKeywords(projectId, pageId, primaryKeywords, secondaryKeywords);
 
         setPrimaryKeywordsInput('');
         setSecondaryKeywordsInput('');
@@ -207,7 +247,7 @@ const PageDetailPage: React.FC = () => {
             alt_texts: [] as string[],
         };
 
-        uploadContent(projectId, pageId, parsedContent, user.id, sheetUrl || undefined);
+        uploadContent(projectId, pageId, parsedContent, sheetUrl || undefined);
 
         setContentMetaTitle('');
         setContentMetaDesc('');
@@ -293,7 +333,7 @@ const PageDetailPage: React.FC = () => {
                                 <Tag size={20} className="text-[var(--color-accent)]" />
                                 <h2 className="text-lg font-semibold">SEO Keywords</h2>
                             </div>
-                            {isContentWriter && (
+                            {(isSEOAnalyst || isAdmin) && (
                                 <button
                                     onClick={() => {
                                         setPrimaryKeywordsInput(page.seo_data?.primaryKeywords?.join('\n') || '');
@@ -327,7 +367,9 @@ const PageDetailPage: React.FC = () => {
                                                                 <div className="flex justify-between"><span className="text-gray-400">Volume:</span> <span className="font-medium">{stats.searchVolume.toLocaleString()}/mo</span></div>
                                                                 <div className="flex justify-between"><span className="text-gray-400">Difficulty:</span> <span className={`font-medium ${stats.difficulty > 70 ? 'text-red-400' : stats.difficulty > 40 ? 'text-yellow-400' : 'text-green-400'}`}>{stats.difficulty}%</span></div>
                                                                 <div className="flex justify-between"><span className="text-gray-400">CPC:</span> <span className="font-medium">${stats.cpc}</span></div>
-                                                                <div className="flex justify-between items-center"><span className="text-gray-400">Trend</span> <span className="font-medium flex items-center gap-1">{stats.trend === 'up' ? <><TrendingUp size={12} className="text-green-400" /> Rising</> : <><Minus size={12} className="text-gray-400" /> Stable</>}</span></div>
+                                                                <div className="flex justify-between"><span className="text-gray-400">Competition:</span> <span className={`font-medium ${stats.competition === 'HIGH' ? 'text-red-400' : stats.competition === 'MEDIUM' ? 'text-yellow-400' : 'text-green-400'}`}>{stats.competition}</span></div>
+                                                                <div className="flex justify-between"><span className="text-gray-400">Bid Range:</span> <span className="font-medium">${stats.lowBid} - ${stats.highBid}</span></div>
+                                                                {!stats.isReal && <div className="text-xs text-gray-500 italic mt-1">* Mock data</div>}
                                                             </div>
                                                         </div>
                                                         <div className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 bg-gray-900 rotate-45"></div>
@@ -359,7 +401,9 @@ const PageDetailPage: React.FC = () => {
                                                                 <div className="flex justify-between"><span className="text-gray-400">Volume:</span> <span className="font-medium">{stats.searchVolume.toLocaleString()}/mo</span></div>
                                                                 <div className="flex justify-between"><span className="text-gray-400">Difficulty:</span> <span className={`font-medium ${stats.difficulty > 70 ? 'text-red-400' : stats.difficulty > 40 ? 'text-yellow-400' : 'text-green-400'}`}>{stats.difficulty}%</span></div>
                                                                 <div className="flex justify-between"><span className="text-gray-400">CPC:</span> <span className="font-medium">${stats.cpc}</span></div>
-                                                                <div className="flex justify-between items-center"><span className="text-gray-400">Trend</span> <span className="font-medium flex items-center gap-1">{stats.trend === 'up' ? <><TrendingUp size={12} className="text-green-400" /> Rising</> : <><Minus size={12} className="text-gray-400" /> Stable</>}</span></div>
+                                                                <div className="flex justify-between"><span className="text-gray-400">Competition:</span> <span className={`font-medium ${stats.competition === 'HIGH' ? 'text-red-400' : stats.competition === 'MEDIUM' ? 'text-yellow-400' : 'text-green-400'}`}>{stats.competition}</span></div>
+                                                                <div className="flex justify-between"><span className="text-gray-400">Bid Range:</span> <span className="font-medium">${stats.lowBid} - ${stats.highBid}</span></div>
+                                                                {!stats.isReal && <div className="text-xs text-gray-500 italic mt-1">* Mock data</div>}
                                                             </div>
                                                         </div>
                                                         <div className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 bg-gray-900 rotate-45"></div>
@@ -381,7 +425,7 @@ const PageDetailPage: React.FC = () => {
                             <div className="text-center py-6 text-[var(--color-text-secondary)]">
                                 <Tag size={32} className="mx-auto text-gray-300 mb-2" />
                                 <p className="font-medium">No SEO keywords uploaded yet</p>
-                                {!isContentWriter && <p className="text-sm mt-1">Waiting for Content Writer</p>}
+                                {!(isSEOAnalyst || isAdmin) && <p className="text-sm mt-1">Waiting for SEO Analyst</p>}
                             </div>
                         )}
                     </div>
@@ -393,7 +437,7 @@ const PageDetailPage: React.FC = () => {
                                 <FileText size={20} className="text-[var(--color-accent)]" />
                                 <h2 className="text-lg font-semibold">Page Content</h2>
                             </div>
-                            {isContentWriter && (
+                            {(isContentWriter || isAdmin) && (
                                 <button
                                     onClick={() => {
                                         if (page.content_data) {
@@ -520,7 +564,7 @@ const PageDetailPage: React.FC = () => {
                             <div className="text-center py-6 text-[var(--color-text-secondary)]">
                                 <FileText size={32} className="mx-auto text-gray-300 mb-2" />
                                 <p className="font-medium">No page content uploaded yet</p>
-                                {!isContentWriter && <p className="text-sm mt-1">Waiting for Content Writer</p>}
+                                {!(isContentWriter || isAdmin) && <p className="text-sm mt-1">Waiting for Content Writer</p>}
                             </div>
                         )}
                     </div>
