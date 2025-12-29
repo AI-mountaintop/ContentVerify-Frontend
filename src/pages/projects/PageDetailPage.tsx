@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, FileText, Tag, CheckCircle, XCircle, RotateCcw, MessageSquare, Loader2, TrendingUp, Minus } from 'lucide-react';
+import { ArrowLeft, FileText, Tag, CheckCircle, XCircle, RotateCcw, MessageSquare, Loader2 } from 'lucide-react';
 import StatusBadge from '../../components/ui/StatusBadge';
 import ScoreDisplay from '../../components/ui/ScoreDisplay';
 import { useAuth } from '../../contexts/AuthContext';
 import { useProjectStore } from '../../stores/projectStore';
 import { getKeywordMetrics } from '../../services/seoService';
+import { parseContentFile, validateContentFile } from '../../utils/csvParser';
 
 const PageDetailPage: React.FC = () => {
     const { projectId, pageId } = useParams<{ projectId: string; pageId: string }>();
@@ -31,6 +32,7 @@ const PageDetailPage: React.FC = () => {
     const [revisionContent, setRevisionContent] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
     const [keywordMetrics, setKeywordMetrics] = useState<Record<string, any>>({});
+    const [csvError, setCsvError] = useState<string>('');
 
     const project = projects.find(p => p.id === projectId);
     const page = project?.pages.find(p => p.id === pageId);
@@ -279,6 +281,38 @@ const PageDetailPage: React.FC = () => {
         if (!projectId || !pageId) return;
         requestRevision(projectId, pageId, revisionSEO, revisionContent);
         setShowRevisionModal(false);
+    };
+
+    // Handle CSV/XLSX file upload
+    const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setCsvError('');
+
+        // Validate file
+        const validation = validateContentFile(file);
+        if (!validation.valid) {
+            setCsvError(validation.error || 'Invalid file');
+            return;
+        }
+
+        try {
+            const parsed = await parseContentFile(file);
+
+            // Populate form fields
+            setContentMetaTitle(parsed.meta_title);
+            setContentMetaDesc(parsed.meta_description);
+            setContentH1(parsed.h1[0] || '');
+            setContentH2s(parsed.h2.join('\n'));
+            setContentH3s(parsed.h3.join('\n'));
+            setContentParagraphs(parsed.paragraphs.join('\n\n'));
+
+            console.log('File parsed successfully:', parsed);
+        } catch (error) {
+            console.error('File parsing error:', error);
+            setCsvError(error instanceof Error ? error.message : 'Failed to parse file');
+        }
     };
 
     // Processing State
@@ -831,6 +865,27 @@ const PageDetailPage: React.FC = () => {
                         <div className="bg-white rounded-lg p-6 w-full max-w-lg mx-4">
                             <h2 className="text-xl font-semibold mb-4">Upload Page Content</h2>
                             <form onSubmit={handleContentUpload} className="space-y-4">
+                                {/* File Upload Section */}
+                                <div className="bg-blue-50 border-2 border-dashed border-blue-200 rounded-lg p-4">
+                                    <p className="text-sm font-medium text-blue-800 mb-2">📄 Upload CSV or Excel File</p>
+                                    <input
+                                        type="file"
+                                        accept=".csv,.xlsx,.xls"
+                                        onChange={handleCSVUpload}
+                                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 cursor-pointer"
+                                    />
+                                    <div className="flex gap-4 mt-2">
+                                        <a
+                                            href="/sample_content_template.csv"
+                                            download
+                                            className="text-xs text-blue-600 hover:underline"
+                                        >
+                                            ⬇️ Download CSV template
+                                        </a>
+                                    </div>
+                                    {csvError && <p className="text-xs text-red-600 mt-1">{csvError}</p>}
+                                </div>
+
                                 <div>
                                     <label className="block text-sm font-medium mb-1">Google Sheet URL (optional)</label>
                                     <input
