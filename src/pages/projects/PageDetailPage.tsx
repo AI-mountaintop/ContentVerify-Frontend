@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Tag, CheckCircle, XCircle, RotateCcw, MessageSquare, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, FileText, Tag, CheckCircle, XCircle, RotateCcw, MessageSquare, Loader2, Trash2, RefreshCw } from 'lucide-react';
 import StatusBadge from '../../components/ui/StatusBadge';
 import ScoreDisplay from '../../components/ui/ScoreDisplay';
 import { useAuth } from '../../contexts/AuthContext';
 import { useProjectStore } from '../../stores/projectStore';
 import { getKeywordMetrics } from '../../services/seoService';
+import { triggerAnalysis } from '../../services/pageService';
 import { parseContentFile, validateContentFile } from '../../utils/csvParser';
 
 const PageDetailPage: React.FC = () => {
@@ -39,6 +40,7 @@ const PageDetailPage: React.FC = () => {
         message: string;
         progress: number;
     }>({ step: 0, message: 'Starting analysis...', progress: 0 });
+    const [isRerunning, setIsRerunning] = useState(false);
 
     const project = projects.find(p => p.id === projectId);
     const page = project?.pages.find(p => p.id === pageId);
@@ -46,9 +48,10 @@ const PageDetailPage: React.FC = () => {
     // Fetch keyword metrics when seo_data exists - MUST be before any early return
     useEffect(() => {
         const fetchMetrics = async () => {
-            if (page?.seo_data?.id) {
+            if (pageId && page?.seo_data) {
                 try {
-                    const metrics = await getKeywordMetrics(page.seo_data.id);
+                    // API expects pageId, not seo_data.id
+                    const metrics = await getKeywordMetrics(pageId);
                     const metricsMap: Record<string, any> = {};
                     metrics.forEach(m => {
                         metricsMap[m.keyword.toLowerCase()] = m;
@@ -60,7 +63,7 @@ const PageDetailPage: React.FC = () => {
             }
         };
         fetchMetrics();
-    }, [page?.seo_data?.id]);
+    }, [pageId, page?.seo_data?.id]);
 
     // Poll for analysis completion when status is processing or pending_review but analysis not loaded
     // Also poll if analysis exists but status is still 'processing' (edge case)
@@ -427,6 +430,21 @@ const PageDetailPage: React.FC = () => {
             navigate(`/projects/${projectId}`);
         } catch (error) {
             console.error('Error deleting page:', error);
+        }
+    };
+
+    // Handle rerun analysis
+    const handleRerunAnalysis = async () => {
+        if (!projectId || !pageId) return;
+        setIsRerunning(true);
+        try {
+            await triggerAnalysis(pageId);
+            // Refresh project data to get updated analysis
+            await fetchProjectById(projectId);
+        } catch (error) {
+            console.error('Error rerunning analysis:', error);
+        } finally {
+            setIsRerunning(false);
         }
     };
 
@@ -891,6 +909,18 @@ const PageDetailPage: React.FC = () => {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Rerun Analysis Button */}
+                            {page.analysis && (
+                                <button
+                                    onClick={handleRerunAnalysis}
+                                    disabled={isRerunning}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 mt-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <RefreshCw size={16} className={isRerunning ? 'animate-spin' : ''} />
+                                    {isRerunning ? 'Rerunning Analysis...' : 'Rerun Analysis'}
+                                </button>
+                            )}
 
                             {/* Verifier Actions */}
                             {isVerifier && page.status === 'pending_review' && (

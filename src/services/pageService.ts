@@ -41,7 +41,7 @@ interface AnalysisBasic {
 export async function getPages(projectId: string): Promise<PageWithData[]> {
     try {
         const pages = await apiClient.get<Page[]>(`/pages/projects/${projectId}/pages`);
-        
+
         // Fetch data for each page
         const pagesWithData = await Promise.all(pages.map(async (page) => {
             try {
@@ -51,7 +51,7 @@ export async function getPages(projectId: string): Promise<PageWithData[]> {
                     content_data?: ContentDataBasic | null;
                     analysis_results?: AnalysisBasic | null;
                 }>(`/pages/${page.id}`);
-                
+
                 return {
                     ...pageData.page,
                     seo_data: pageData.seo_data || null,
@@ -68,7 +68,7 @@ export async function getPages(projectId: string): Promise<PageWithData[]> {
                 };
             }
         }));
-        
+
         return pagesWithData;
     } catch (error) {
         console.error('Error fetching pages:', error);
@@ -87,7 +87,7 @@ export async function getPageById(pageId: string): Promise<PageWithData | null> 
             content_data?: ContentDataBasic | null;
             analysis_results?: AnalysisBasic | null;
         }>(`/pages/${pageId}`);
-        
+
         return {
             ...pageData.page,
             seo_data: pageData.seo_data || null,
@@ -163,6 +163,19 @@ export async function deletePage(pageId: string): Promise<void> {
         await apiClient.delete(`/pages/${pageId}`);
     } catch (error) {
         console.error('Error deleting page:', error);
+        throw error;
+    }
+}
+
+/**
+ * Trigger content analysis for a page
+ */
+export async function triggerAnalysis(pageId: string): Promise<any> {
+    try {
+        const data = await apiClient.post<any>(`/pages/${pageId}/analysis/trigger`, {});
+        return data;
+    } catch (error) {
+        console.error('Error triggering analysis:', error);
         throw error;
     }
 }
