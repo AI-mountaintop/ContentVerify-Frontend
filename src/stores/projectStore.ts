@@ -9,7 +9,7 @@ import {
 } from '../services/projectService';
 import {
     getPages,
-    // getPageById,
+    getPageById,
     createPage as createPageAPI,
     // updatePage as updatePageAPI,
     updatePageStatus as updatePageStatusAPI,
@@ -87,46 +87,55 @@ function convertDbProjectToApp(dbProject: any): Project {
         created_by: dbProject.created_by,
         created_at: dbProject.created_at,
         updated_at: dbProject.updated_at,
-        pages: (dbProject.pages || []).map((p: any) => ({
-            id: p.id,
-            project_id: dbProject.id,
-            name: p.name,
-            slug: p.slug,
-            status: p.status,
-            created_at: p.created_at,
-            updated_at: p.updated_at,
-            seo_data: p.seo_data ? {
-                id: p.seo_data.id,
-                page_id: p.id,
-                primaryKeywords: p.seo_data.primary_keywords || [],
-                secondaryKeywords: p.seo_data.secondary_keywords || [],
-                uploaded_by: p.seo_data.uploaded_by,
-                uploaded_at: p.seo_data.uploaded_at,
-                version: p.seo_data.version,
-            } : undefined,
-            content_data: p.content_data ? {
-                id: p.content_data.id,
-                page_id: p.id,
-                google_sheet_url: p.content_data.google_sheet_url || undefined,
-                parsed_content: p.content_data.parsed_content || {},
-                uploaded_by: p.content_data.uploaded_by,
-                uploaded_at: p.content_data.uploaded_at,
-                version: p.content_data.version,
-            } : undefined,
-            analysis: p.analysis_results ? {
-                id: p.analysis_results.id,
-                page_id: p.id,
-                overall_score: p.analysis_results.overall_score,
-                seo_score: p.analysis_results.seo_score,
-                readability_score: p.analysis_results.readability_score,
-                keyword_density_score: p.analysis_results.keyword_density_score,
-                grammar_score: p.analysis_results.grammar_score,
-                content_intent_score: p.analysis_results.content_intent_score,
-                technical_health_score: p.analysis_results.technical_health_score,
-                detailed_feedback: p.analysis_results.detailed_feedback,
-            } : undefined,
-        })),
+        pages: (dbProject.pages || []).map((p: any) => convertDbPageToApp(p, dbProject.id)),
         members: dbProject.members || [],
+    };
+}
+
+// Helper to convert a single page from DB format to app format
+function convertDbPageToApp(p: any, projectId: string): Page {
+    return {
+        id: p.id,
+        project_id: projectId || p.project_id,
+        name: p.name,
+        slug: p.slug,
+        status: p.status,
+        error_message: p.error_message,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+        seo_data: p.seo_data ? {
+            id: p.seo_data.id,
+            page_id: p.id,
+            primaryKeywords: p.seo_data.primary_keywords || [],
+            secondaryKeywords: p.seo_data.secondary_keywords || [],
+            uploaded_by: p.seo_data.uploaded_by,
+            uploaded_at: p.seo_data.uploaded_at,
+            version: p.seo_data.version,
+        } : undefined,
+        content_data: p.content_data ? {
+            id: p.content_data.id,
+            page_id: p.id,
+            google_sheet_url: p.content_data.google_sheet_url || undefined,
+            parsed_content: p.content_data.parsed_content || {},
+            uploaded_by: p.content_data.uploaded_by,
+            uploaded_at: p.content_data.uploaded_at,
+            version: p.content_data.version,
+        } : undefined,
+        analysis: p.analysis_results ? {
+            id: p.analysis_results.id,
+            page_id: p.id,
+            overall_score: p.analysis_results.overall_score,
+            seo_score: p.analysis_results.seo_score,
+            readability_score: p.analysis_results.readability_score,
+            keyword_density_score: p.analysis_results.keyword_density_score,
+            grammar_score: p.analysis_results.grammar_score,
+            content_intent_score: p.analysis_results.content_intent_score,
+            technical_health_score: p.analysis_results.technical_health_score,
+            keyword_analysis: p.analysis_results.keyword_analysis || [],
+            suggestions: p.analysis_results.suggestions || [],
+            highlighted_content: p.analysis_results.highlighted_content || '',
+            processed_at: p.analysis_results.processed_at,
+        } : undefined,
     };
 }
 
@@ -331,10 +340,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                 secondary_keywords: secondaryKeywords,
             });
 
-            // Re-fetch the project to get the correct status from backend
-            // The backend may have triggered analysis and set status to 'processing'
-            await get().fetchProjectById(projectId);
-            set({ isLoading: false });
+            // Fetch only the updated page (more efficient than refetching entire project)
+            const updatedPageData = await getPageById(pageId);
+            if (updatedPageData) {
+                const updatedPage = convertDbPageToApp(updatedPageData, projectId);
+
+                set((state) => ({
+                    projects: state.projects.map((p) =>
+                        p.id === projectId
+                            ? {
+                                ...p,
+                                pages: p.pages?.map((page) =>
+                                    page.id === pageId ? updatedPage : page
+                                ) || [updatedPage],
+                            }
+                            : p
+                    ),
+                    isLoading: false,
+                }));
+            } else {
+                set({ isLoading: false });
+            }
         } catch (error: any) {
             console.error('Error uploading SEO keywords:', error);
             set({ error: error.message, isLoading: false });
@@ -350,10 +376,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                 google_sheet_url: sheetUrl,
             });
 
-            // Re-fetch the project to get the correct status from backend
-            // The backend may have triggered analysis and set status to 'processing'
-            await get().fetchProjectById(projectId);
-            set({ isLoading: false });
+            // Fetch only the updated page (more efficient than refetching entire project)
+            const updatedPageData = await getPageById(pageId);
+            if (updatedPageData) {
+                const updatedPage = convertDbPageToApp(updatedPageData, projectId);
+
+                set((state) => ({
+                    projects: state.projects.map((p) =>
+                        p.id === projectId
+                            ? {
+                                ...p,
+                                pages: p.pages?.map((page) =>
+                                    page.id === pageId ? updatedPage : page
+                                ) || [updatedPage],
+                            }
+                            : p
+                    ),
+                    isLoading: false,
+                }));
+            } else {
+                set({ isLoading: false });
+            }
         } catch (error: any) {
             console.error('Error uploading content:', error);
             set({ error: error.message, isLoading: false });

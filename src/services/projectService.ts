@@ -58,36 +58,28 @@ export async function getProjects(): Promise<ProjectWithDetails[]> {
     try {
         const projects = await apiClient.get<Project[]>('/projects');
         
-        // For each project, fetch pages with data
+        // For each project, fetch pages with data in bulk (optimized to avoid N+1)
         const projectsWithData = await Promise.all(projects.map(async (project) => {
             try {
-                const pages = await apiClient.get<PageBasic[]>(`/pages/projects/${project.id}/pages`);
+                // Use ?withData=true to get all page data in one request
+                const pagesWithData = await apiClient.get<Array<{
+                    page: PageBasic;
+                    seo_data?: any;
+                    content_data?: any;
+                    analysis_results?: any;
+                }>>(`/pages/projects/${project.id}/pages?withData=true`);
                 
-                // For each page, fetch SEO, content, and analysis data
-                const pagesWithData = await Promise.all(pages.map(async (page) => {
-                    try {
-                        const pageData = await apiClient.get<{
-                            page: PageBasic;
-                            seo_data?: any;
-                            content_data?: any;
-                            analysis_results?: any;
-                        }>(`/pages/${page.id}`);
-                        
-                        return {
-                            ...page,
-                            seo_data: pageData.seo_data || null,
-                            content_data: pageData.content_data || null,
-                            analysis_results: pageData.analysis_results || null,
-                        };
-                    } catch (error) {
-                        console.error(`Error fetching data for page ${page.id}:`, error);
-                        return page;
-                    }
+                // Transform the response to match expected format
+                const pages = pagesWithData.map(item => ({
+                    ...item.page,
+                    seo_data: item.seo_data || null,
+                    content_data: item.content_data || null,
+                    analysis_results: item.analysis_results || null,
                 }));
                 
                 return {
                     ...project,
-                    pages: pagesWithData,
+                    pages: pages,
                     members: [], // Will be fetched separately if needed
                 };
             } catch (error) {
@@ -116,28 +108,20 @@ export async function getProjectById(projectId: string): Promise<ProjectWithDeta
         
         if (!project) return null;
         
-        // Fetch pages with data
-        const pages = await apiClient.get<PageBasic[]>(`/pages/projects/${projectId}/pages`);
+        // Fetch pages with data in bulk (optimized to avoid N+1)
+        const pagesWithDataResponse = await apiClient.get<Array<{
+            page: PageBasic;
+            seo_data?: any;
+            content_data?: any;
+            analysis_results?: any;
+        }>>(`/pages/projects/${projectId}/pages?withData=true`);
         
-        const pagesWithData = await Promise.all(pages.map(async (page) => {
-            try {
-                const pageData = await apiClient.get<{
-                    page: PageBasic;
-                    seo_data?: any;
-                    content_data?: any;
-                    analysis_results?: any;
-                }>(`/pages/${page.id}`);
-                
-                return {
-                    ...page,
-                    seo_data: pageData.seo_data || null,
-                    content_data: pageData.content_data || null,
-                    analysis_results: pageData.analysis_results || null,
-                };
-            } catch (error) {
-                console.error(`Error fetching data for page ${page.id}:`, error);
-                return page;
-            }
+        // Transform the response to match expected format
+        const pages = pagesWithDataResponse.map(item => ({
+            ...item.page,
+            seo_data: item.seo_data || null,
+            content_data: item.content_data || null,
+            analysis_results: item.analysis_results || null,
         }));
         
         // Fetch members
@@ -145,7 +129,7 @@ export async function getProjectById(projectId: string): Promise<ProjectWithDeta
         
         return {
             ...project,
-            pages: pagesWithData,
+            pages: pages,
             members: members || [],
         };
     } catch (error: any) {

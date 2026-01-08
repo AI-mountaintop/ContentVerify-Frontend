@@ -4,12 +4,17 @@ import { Plus, ExternalLink, Settings, ArrowLeft } from 'lucide-react';
 import StatusBadge from '../../components/ui/StatusBadge';
 import DataStatusIndicator from '../../components/ui/DataStatusIndicator';
 import { useProjectStore } from '../../stores/projectStore';
+import { useAuth } from '../../contexts/AuthContext';
 
 const ProjectDetailPage: React.FC = () => {
     const { projectId } = useParams<{ projectId: string }>();
     const { projects, addPage } = useProjectStore();
+    const { user } = useAuth();
     const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'needs_work'>('all');
     const [showAddPageModal, setShowAddPageModal] = useState(false);
+    
+    // Admin, SEO Analyst, and Content Writer can create pages
+    const canCreatePage = user?.role === 'admin' || user?.role === 'seo_analyst' || user?.role === 'content_writer';
 
     // Form state
     const [newPageName, setNewPageName] = useState('');
@@ -123,13 +128,15 @@ const ProjectDetailPage: React.FC = () => {
                         </button>
                     ))}
                 </div>
-                <button
-                    onClick={() => setShowAddPageModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] text-white rounded-md hover:opacity-90 transition-smooth font-medium text-sm"
-                >
-                    <Plus size={16} />
-                    Add Page
-                </button>
+                {canCreatePage && (
+                    <button
+                        onClick={() => setShowAddPageModal(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] text-white rounded-md hover:opacity-90 transition-smooth font-medium text-sm"
+                    >
+                        <Plus size={16} />
+                        Add Page
+                    </button>
+                )}
             </div>
 
             {/* Pages List */}
