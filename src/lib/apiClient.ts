@@ -2,7 +2,15 @@
  * API Client for frontend to communicate with backend
  */
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// Get base URL from environment, default to localhost
+let API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+
+// Ensure API_URL ends with /api
+// This handles cases where VITE_API_URL is set to just the backend domain
+if (!API_URL.endsWith('/api')) {
+  // Remove trailing slash if present, then append /api
+  API_URL = API_URL.replace(/\/$/, '') + '/api';
+}
 
 export interface ApiError {
   error: {
