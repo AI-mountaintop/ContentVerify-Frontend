@@ -40,36 +40,21 @@ interface AnalysisBasic {
  */
 export async function getPages(projectId: string): Promise<PageWithData[]> {
     try {
-        const pages = await apiClient.get<Page[]>(`/pages/projects/${projectId}/pages`);
+        // Use ?withData=true to get all page data in one request (optimized to avoid N+1)
+        const pagesWithDataResponse = await apiClient.get<Array<{
+            page: Page;
+            seo_data?: SEODataBasic | null;
+            content_data?: ContentDataBasic | null;
+            analysis_results?: AnalysisBasic | null;
+        }>>(`/pages/projects/${projectId}/pages?withData=true`);
 
-        // Fetch data for each page
-        const pagesWithData = await Promise.all(pages.map(async (page) => {
-            try {
-                const pageData = await apiClient.get<{
-                    page: Page;
-                    seo_data?: SEODataBasic | null;
-                    content_data?: ContentDataBasic | null;
-                    analysis_results?: AnalysisBasic | null;
-                }>(`/pages/${page.id}`);
-
-                return {
-                    ...pageData.page,
-                    seo_data: pageData.seo_data || null,
-                    content_data: pageData.content_data || null,
-                    analysis_results: pageData.analysis_results || null,
-                };
-            } catch (error) {
-                console.error(`Error fetching data for page ${page.id}:`, error);
-                return {
-                    ...page,
-                    seo_data: null,
-                    content_data: null,
-                    analysis_results: null,
-                };
-            }
+        // Transform the response to match expected format
+        return pagesWithDataResponse.map(item => ({
+            ...item.page,
+            seo_data: item.seo_data || null,
+            content_data: item.content_data || null,
+            analysis_results: item.analysis_results || null,
         }));
-
-        return pagesWithData;
     } catch (error) {
         console.error('Error fetching pages:', error);
         throw error;

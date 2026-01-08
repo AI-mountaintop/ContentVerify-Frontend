@@ -605,7 +605,7 @@ const PageDetailPage: React.FC = () => {
                                             const stats = getKeywordStats(kw);
                                             return (
                                                 <div key={i} className="relative group">
-                                                    <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium cursor-help">
+                                                    <span className="px-3 py-1 bg-yellow-200 text-yellow-800 rounded-full text-sm font-medium cursor-help border border-yellow-300">
                                                         {kw}
                                                     </span>
                                                     {/* Tooltip */}
@@ -657,7 +657,7 @@ const PageDetailPage: React.FC = () => {
                                             const stats = getKeywordStats(kw);
                                             return (
                                                 <div key={i} className="relative group">
-                                                    <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-medium cursor-help">
+                                                    <span className="px-3 py-1 bg-cyan-100 text-cyan-800 rounded-full text-sm font-medium cursor-help border border-cyan-200">
                                                         {kw}
                                                     </span>
                                                     {/* Tooltip */}
