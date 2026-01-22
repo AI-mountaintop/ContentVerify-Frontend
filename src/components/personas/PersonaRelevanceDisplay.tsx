@@ -1,5 +1,5 @@
 import React from 'react';
-import type { CustomerPersona, EnhancedCustomerPersona } from '../../types/project';
+import type { EnhancedCustomerPersona } from '../../types/project';
 
 interface PersonaRelevanceDisplayProps {
     persona: EnhancedCustomerPersona;
