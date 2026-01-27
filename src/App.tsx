@@ -10,6 +10,8 @@ import PageDetailPage from './pages/projects/PageDetailPage';
 import MyTasksPage from './pages/tasks/MyTasksPage';
 import ActivityPage from './pages/activity/ActivityPage';
 import SettingsPage from './pages/settings/SettingsPage';
+import TeamManagementPage from './pages/admin/TeamManagementPage';
+import { RequireRole } from './components/auth/RequireRole';
 import { Loader2 } from 'lucide-react';
 
 // Loading component for auth check
@@ -61,6 +63,14 @@ function AppRoutes() {
         <Route path="tasks" element={<MyTasksPage />} />
         <Route path="activity" element={<ActivityPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route
+          path="admin/team"
+          element={
+            <RequireRole allowedRoles={['admin']}>
+              <TeamManagementPage />
+            </RequireRole>
+          }
+        />
       </Route>
     </Routes>
   );

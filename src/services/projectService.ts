@@ -1,5 +1,6 @@
 import { apiClient } from '../lib/apiClient';
 import type { Database } from '../lib/database.types';
+import type { User } from '../types/user';
 
 type Project = Database['public']['Tables']['projects']['Row'];
 // type ProjectInsert = Database['public']['Tables']['projects']['Insert'];
@@ -124,8 +125,8 @@ export async function getProjectById(projectId: string): Promise<ProjectWithDeta
             analysis_results: item.analysis_results || null,
         }));
 
-        // Fetch members
-        const members = await apiClient.get<MemberBasic[]>(`/projects/${projectId}/members`);
+        // Fetch members with user details
+        const members = await apiClient.get<Array<MemberBasic & { user: { id: string; name: string; email: string; role: string; avatar_url?: string | null } }>>(`/projects/${projectId}/members`);
 
         return {
             ...project,
@@ -213,6 +214,47 @@ export async function addProjectMember(
         });
     } catch (error) {
         console.error('Error adding project member:', error);
+        throw error;
+    }
+}
+
+/**
+ * Remove a member from a project
+ */
+export async function removeProjectMember(
+    projectId: string,
+    userId: string
+): Promise<void> {
+    try {
+        await apiClient.delete(`/projects/${projectId}/members/${userId}`);
+    } catch (error) {
+        console.error('Error removing project member:', error);
+        throw error;
+    }
+}
+
+/**
+ * Get project members with user details
+ */
+export async function getProjectMembers(projectId: string): Promise<Array<{ id: string; user_id: string; role: string; user: { id: string; name: string; email: string; role: string; avatar_url?: string | null } }>> {
+    try {
+        const members = await apiClient.get<Array<{ id: string; user_id: string; role: string; user: { id: string; name: string; email: string; role: string; avatar_url?: string | null } }>>(`/projects/${projectId}/members`);
+        return members;
+    } catch (error) {
+        console.error('Error fetching project members:', error);
+        throw error;
+    }
+}
+
+/**
+ * Get all users for project assignment (Admin/SEO Analyst only)
+ */
+export async function getUsersForAssignment(): Promise<User[]> {
+    try {
+        const users = await apiClient.get<User[]>('/projects/users');
+        return users;
+    } catch (error) {
+        console.error('Error fetching users for assignment:', error);
         throw error;
     }
 }

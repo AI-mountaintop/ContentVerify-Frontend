@@ -9,7 +9,8 @@ import {
     ChevronDown,
     ChevronRight,
     Menu,
-    X
+    X,
+    Users
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useProjectStore } from '../../stores/projectStore';
@@ -138,6 +139,20 @@ const Sidebar: React.FC = () => {
                         )}
                     </div>
                 ))}
+
+                {/* Admin-only Team Management Link */}
+                {user?.role === 'admin' && (
+                    <Link
+                        to="/admin/team"
+                        className={`flex items-center gap-3 px-3 py-2 rounded-md transition-smooth ${isActive('/admin/team')
+                            ? 'bg-accent-light text-accent font-medium'
+                            : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary'
+                            }`}
+                    >
+                        <Users size={20} />
+                        {!isCollapsed && <span>Team Management</span>}
+                    </Link>
+                )}
             </nav>
 
             {/* User Section */}

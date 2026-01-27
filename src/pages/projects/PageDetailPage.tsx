@@ -40,6 +40,7 @@ const PageDetailPage: React.FC = () => {
     const [keywordMetrics, setKeywordMetrics] = useState<Record<string, any>>({});
     const [csvError, setCsvError] = useState<string>('');
     const [analysisError, setAnalysisError] = useState<string>('');
+    const [keywordDuplicateError, setKeywordDuplicateError] = useState<string>('');
     const [analysisProgress, setAnalysisProgress] = useState<{
         step: number;
         message: string;
@@ -374,12 +375,71 @@ const PageDetailPage: React.FC = () => {
 
 
     // Handlers
+    // Check for duplicate keywords
+    const checkDuplicateKeywords = (
+        primaryKeywords: string[],
+        secondaryKeywords: string[]
+    ): string | null => {
+        // Normalize keywords (lowercase, trim) for comparison
+        const normalize = (keyword: string) => keyword.toLowerCase().trim();
+        
+        // Check for duplicates within primary keywords
+        const primaryNormalized = primaryKeywords.map(normalize);
+        const primaryDuplicates = primaryNormalized.filter((k, i) => primaryNormalized.indexOf(k) !== i);
+        if (primaryDuplicates.length > 0) {
+            const uniqueDuplicates = [...new Set(primaryDuplicates)];
+            return `Duplicate primary keywords found: ${uniqueDuplicates.join(', ')}. Each keyword should be unique.`;
+        }
+
+        // Check for duplicates within secondary keywords
+        const secondaryNormalized = secondaryKeywords.map(normalize);
+        const secondaryDuplicates = secondaryNormalized.filter((k, i) => secondaryNormalized.indexOf(k) !== i);
+        if (secondaryDuplicates.length > 0) {
+            const uniqueDuplicates = [...new Set(secondaryDuplicates)];
+            return `Duplicate secondary keywords found: ${uniqueDuplicates.join(', ')}. Each keyword should be unique.`;
+        }
+
+        // Check for keywords that appear in both primary and secondary
+        const commonKeywords = primaryNormalized.filter(k => secondaryNormalized.includes(k));
+        if (commonKeywords.length > 0) {
+            return `The following keywords appear in both primary and secondary lists: ${commonKeywords.join(', ')}. A keyword should be either primary or secondary, not both.`;
+        }
+
+        // Check for duplicates with existing keywords (if page has existing SEO data)
+        if (page?.seo_data) {
+            const existingPrimary = (page.seo_data.primaryKeywords || []).map(normalize);
+            const existingSecondary = (page.seo_data.secondaryKeywords || []).map(normalize);
+            const allExisting = [...existingPrimary, ...existingSecondary];
+
+            const duplicatesWithExisting = [
+                ...primaryNormalized.filter(k => allExisting.includes(k)),
+                ...secondaryNormalized.filter(k => allExisting.includes(k))
+            ];
+
+            if (duplicatesWithExisting.length > 0) {
+                const uniqueDuplicates = [...new Set(duplicatesWithExisting)];
+                return `The following keywords already exist on this page: ${uniqueDuplicates.join(', ')}. Please use different keywords.`;
+            }
+        }
+
+        return null;
+    };
+
     const handleSEOUpload = (e: React.FormEvent) => {
         e.preventDefault();
         if (!primaryKeywordsInput.trim() || !projectId || !pageId || !user) return;
 
         const primaryKeywords = primaryKeywordsInput.split('\n').map(k => k.trim()).filter(k => k);
         const secondaryKeywords = secondaryKeywordsInput.split('\n').map(k => k.trim()).filter(k => k);
+
+        // Check for duplicates
+        const duplicateError = checkDuplicateKeywords(primaryKeywords, secondaryKeywords);
+        if (duplicateError) {
+            setKeywordDuplicateError(duplicateError);
+            return;
+        }
+
+        setKeywordDuplicateError('');
         uploadSEOKeywords(projectId, pageId, primaryKeywords, secondaryKeywords);
 
         setPrimaryKeywordsInput('');
@@ -432,6 +492,13 @@ const PageDetailPage: React.FC = () => {
     const handleRevisionRequest = (e: React.FormEvent) => {
         e.preventDefault();
         if (!projectId || !pageId) return;
+        
+        // Validate that at least one option is selected
+        if (!revisionSEO && !revisionContent) {
+            alert('Please select at least one revision type (SEO or Content)');
+            return;
+        }
+        
         requestRevision(projectId, pageId, revisionSEO, revisionContent);
         setShowRevisionModal(false);
     };
@@ -635,6 +702,7 @@ const PageDetailPage: React.FC = () => {
                                     onClick={() => {
                                         setPrimaryKeywordsInput(page.seo_data?.primaryKeywords?.join('\n') || '');
                                         setSecondaryKeywordsInput(page.seo_data?.secondaryKeywords?.join('\n') || '');
+                                        setKeywordDuplicateError('');
                                         setShowSEOModal(true);
                                     }}
                                     className="px-3 py-1.5 text-sm bg-[var(--color-accent)] text-white rounded-md hover:opacity-90"
@@ -1624,10 +1692,24 @@ const PageDetailPage: React.FC = () => {
             {/* SEO Upload Modal */}
             {
                 showSEOModal && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+                    <div 
+                        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+                        onClick={() => {
+                            setShowSEOModal(false);
+                            setKeywordDuplicateError('');
+                        }}
+                    >
+                        <div 
+                            className="bg-white rounded-lg p-6 w-full max-w-md mx-4"
+                            onClick={(e) => e.stopPropagation()}
+                        >
                             <h2 className="text-xl font-semibold mb-4">Upload SEO Keywords</h2>
                             <form onSubmit={handleSEOUpload} className="space-y-4">
+                                {keywordDuplicateError && (
+                                    <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                                        <p className="text-sm text-red-700">{keywordDuplicateError}</p>
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-sm font-medium mb-1">Primary Keywords (one per line) *</label>
                                     <p className="text-xs text-gray-500 mb-2">High-priority target keywords (1-3 recommended)</p>
@@ -1635,9 +1717,18 @@ const PageDetailPage: React.FC = () => {
                                         rows={4}
                                         placeholder="industrial pumps&#10;velocity pumps"
                                         value={primaryKeywordsInput}
-                                        onChange={(e) => setPrimaryKeywordsInput(e.target.value)}
+                                        onChange={(e) => {
+                                            setPrimaryKeywordsInput(e.target.value);
+                                            if (keywordDuplicateError) {
+                                                setKeywordDuplicateError('');
+                                            }
+                                        }}
                                         required
-                                        className="w-full px-3 py-2 border border-[var(--color-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] ${
+                                            keywordDuplicateError 
+                                                ? 'border-red-500 focus:ring-red-500' 
+                                                : 'border-[var(--color-border)]'
+                                        }`}
                                     />
                                 </div>
                                 <div>
@@ -1647,15 +1738,31 @@ const PageDetailPage: React.FC = () => {
                                         rows={4}
                                         placeholder="high-pressure systems&#10;pump manufacturer"
                                         value={secondaryKeywordsInput}
-                                        onChange={(e) => setSecondaryKeywordsInput(e.target.value)}
-                                        className="w-full px-3 py-2 border border-[var(--color-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                                        onChange={(e) => {
+                                            setSecondaryKeywordsInput(e.target.value);
+                                            if (keywordDuplicateError) {
+                                                setKeywordDuplicateError('');
+                                            }
+                                        }}
+                                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] ${
+                                            keywordDuplicateError 
+                                                ? 'border-red-500 focus:ring-red-500' 
+                                                : 'border-[var(--color-border)]'
+                                        }`}
                                     />
                                 </div>
                                 <div className="flex gap-3 pt-2">
-                                    <button type="button" onClick={() => setShowSEOModal(false)} className="flex-1 px-4 py-2 border border-[var(--color-border)] rounded-md hover:bg-gray-50">
+                                    <button type="button"                                         onClick={() => {
+                                            setShowSEOModal(false);
+                                            setKeywordDuplicateError('');
+                                        }} className="flex-1 px-4 py-2 border border-[var(--color-border)] rounded-md hover:bg-gray-50">
                                         Cancel
                                     </button>
-                                    <button type="submit" className="flex-1 px-4 py-2 bg-[var(--color-accent)] text-white rounded-md hover:opacity-90">
+                                    <button 
+                                        type="submit" 
+                                        disabled={!!keywordDuplicateError}
+                                        className="flex-1 px-4 py-2 bg-[var(--color-accent)] text-white rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
                                         Upload Keywords
                                     </button>
                                 </div>
@@ -1668,8 +1775,14 @@ const PageDetailPage: React.FC = () => {
             {/* Content Upload Modal */}
             {
                 showContentModal && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto py-4">
-                        <div className="bg-white rounded-lg p-6 w-full max-w-7xl mx-4 my-4">
+                    <div 
+                        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto py-4"
+                        onClick={() => setShowContentModal(false)}
+                    >
+                        <div 
+                            className="bg-white rounded-lg p-6 w-full max-w-7xl mx-4 my-4"
+                            onClick={(e) => e.stopPropagation()}
+                        >
                             <h2 className="text-xl font-semibold mb-4">Upload Page Content</h2>
                             <form onSubmit={handleContentUpload} className="space-y-4">
                                 {/* File Upload Section */}
@@ -1798,8 +1911,14 @@ const PageDetailPage: React.FC = () => {
             {/* Revision Request Modal */}
             {
                 showRevisionModal && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+                    <div 
+                        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+                        onClick={() => setShowRevisionModal(false)}
+                    >
+                        <div 
+                            className="bg-white rounded-lg p-6 w-full max-w-md mx-4"
+                            onClick={(e) => e.stopPropagation()}
+                        >
                             <h2 className="text-xl font-semibold mb-4">Request Revision</h2>
                             <form onSubmit={handleRevisionRequest} className="space-y-4">
                                 <p className="text-[var(--color-text-secondary)]">Select what needs to be revised:</p>

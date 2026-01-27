@@ -462,10 +462,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         }
     },
 
-    requestRevision: async (projectId, pageId, _reviseSEO, _reviseContent) => {
+    requestRevision: async (projectId, pageId, reviseSEO, reviseContent) => {
         set({ isLoading: true, error: null });
         try {
-            await requestRevisionAPI(pageId);
+            await requestRevisionAPI(pageId, reviseSEO, reviseContent);
+
+            // Determine the appropriate status based on what needs revision
+            let newStatus: PageStatus;
+            if (reviseSEO && reviseContent) {
+                newStatus = 'revision_requested';
+            } else if (reviseSEO) {
+                newStatus = 'awaiting_seo';
+            } else {
+                newStatus = 'awaiting_content';
+            }
 
             set((state) => ({
                 projects: state.projects.map((p) =>
@@ -473,7 +483,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                         ? {
                             ...p,
                             pages: p.pages?.map((pg) =>
-                                pg.id === pageId ? { ...pg, status: 'revision_requested' as PageStatus } : pg
+                                pg.id === pageId ? { ...pg, status: newStatus } : pg
                             ),
                         }
                         : p
