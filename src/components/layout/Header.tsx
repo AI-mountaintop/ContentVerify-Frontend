@@ -17,7 +17,7 @@ interface SearchResult {
 const Header: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const { projects } = useProjectStore();
+    const projects = useProjectStore(state => state.projects);
     const [showHelpModal, setShowHelpModal] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');

@@ -54,44 +54,35 @@ interface MemberBasic {
 
 /**
  * Get all projects accessible to the current user
+ * Uses bulk endpoint to fetch all projects with pages in a single request
  */
 export async function getProjects(): Promise<ProjectWithDetails[]> {
     try {
-        const projects = await apiClient.get<Project[]>('/projects');
+        // Use ?withPages=true to get all projects with pages in one optimized request
+        const projectsWithPages = await apiClient.get<Array<Project & {
+            pages: Array<{
+                page: PageBasic;
+                seo_data?: any;
+                content_data?: any;
+                analysis_results?: any;
+            }>;
+        }>>('/projects?withPages=true');
 
-        // For each project, fetch pages with data in bulk (optimized to avoid N+1)
-        const projectsWithData = await Promise.all(projects.map(async (project) => {
-            try {
-                // Use ?withData=true to get all page data in one request
-                const pagesWithData = await apiClient.get<Array<{
-                    page: PageBasic;
-                    seo_data?: any;
-                    content_data?: any;
-                    analysis_results?: any;
-                }>>(`/pages/projects/${project.id}/pages?withData=true`);
+        // Transform the response to match expected format
+        const projectsWithData = projectsWithPages.map((project) => {
+            const pages = project.pages.map(item => ({
+                ...item.page,
+                seo_data: item.seo_data || null,
+                content_data: item.content_data || null,
+                analysis_results: item.analysis_results || null,
+            }));
 
-                // Transform the response to match expected format
-                const pages = pagesWithData.map(item => ({
-                    ...item.page,
-                    seo_data: item.seo_data || null,
-                    content_data: item.content_data || null,
-                    analysis_results: item.analysis_results || null,
-                }));
-
-                return {
-                    ...project,
-                    pages: pages,
-                    members: [], // Will be fetched separately if needed
-                };
-            } catch (error) {
-                console.error(`Error fetching pages for project ${project.id}:`, error);
-                return {
-                    ...project,
-                    pages: [],
-                    members: [],
-                };
-            }
-        }));
+            return {
+                ...project,
+                pages: pages,
+                members: [], // Will be fetched separately if needed
+            };
+        });
 
         return projectsWithData;
     } catch (error) {

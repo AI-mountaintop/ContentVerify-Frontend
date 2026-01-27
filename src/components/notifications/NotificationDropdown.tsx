@@ -43,9 +43,12 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ unreadCount
     };
   }, [isOpen]);
 
-  // Fetch unread count periodically
+  // Fetch unread count periodically (only when tab is visible)
   useEffect(() => {
     const fetchUnreadCount = async () => {
+      // Only fetch if tab is visible
+      if (document.hidden) return;
+      
       try {
         const count = await getUnreadCount();
         onUnreadCountChange(count);
@@ -55,9 +58,20 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ unreadCount
     };
 
     fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 30000); // Refresh every 30 seconds
+    const interval = setInterval(fetchUnreadCount, 60000); // Refresh every 60 seconds (reduced from 30s)
 
-    return () => clearInterval(interval);
+    // Also listen for visibility changes to fetch immediately when tab becomes visible
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchUnreadCount();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [onUnreadCountChange]);
 
   const fetchNotifications = async () => {
@@ -158,7 +172,9 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ unreadCount
       >
         <Bell size={20} className="text-text-secondary" />
         {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span>
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1.5 flex items-center justify-center bg-error text-white text-xs font-semibold rounded-full border-2 border-white shadow-sm">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
         )}
       </button>
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Loader2 } from 'lucide-react';
 import ProjectCard from '../../components/projects/ProjectCard';
 import EmptyState from '../../components/ui/EmptyState';
@@ -6,22 +7,19 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useAuth } from '../../contexts/AuthContext';
 
 const ProjectsListPage: React.FC = () => {
+    const navigate = useNavigate();
     const { user } = useAuth();
-    const { projects, isLoading, error, fetchProjects, addProject, clearError } = useProjectStore();
+    const projects = useProjectStore(state => state.projects);
+    const isLoading = useProjectStore(state => state.isLoading);
+    const error = useProjectStore(state => state.error);
+    const fetchProjects = useProjectStore(state => state.fetchProjects);
+    const clearError = useProjectStore(state => state.clearError);
     const [searchQuery, setSearchQuery] = useState('');
     const [filter, setFilter] = useState<'all' | 'my' | 'recent'>('all');
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [isCreating, setIsCreating] = useState(false);
-    const [duplicateNameError, setDuplicateNameError] = useState('');
 
-    // Form state
-    const [newProjectName, setNewProjectName] = useState('');
-    const [newProjectUrl, setNewProjectUrl] = useState('');
-    const [newProjectDesc, setNewProjectDesc] = useState('');
-
-    // Fetch projects on mount only
+    // Fetch projects on mount only (will use cache if available)
     useEffect(() => {
-        fetchProjects();
+        fetchProjects(false); // false = use cache if available
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -70,54 +68,6 @@ const ProjectsListPage: React.FC = () => {
         return result;
     }, [projects, filter, searchQuery, user?.id]);
 
-    // Check for duplicate project name
-    const checkDuplicateName = (name: string): boolean => {
-        if (!name.trim()) return false;
-        const trimmedName = name.trim().toLowerCase();
-        return projects.some(project => project.name.toLowerCase() === trimmedName);
-    };
-
-    const handleCreateProject = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!newProjectName.trim() || !newProjectUrl.trim() || !user) return;
-
-        // Check for duplicate name
-        if (checkDuplicateName(newProjectName)) {
-            setDuplicateNameError(`A project with the name "${newProjectName.trim()}" already exists. Please choose a different name.`);
-            return;
-        }
-
-        setDuplicateNameError('');
-        setIsCreating(true);
-        
-        try {
-            const result = await addProject(newProjectName, newProjectUrl, newProjectDesc || undefined, user.id);
-            
-            if (result) {
-                // Reset form and close modal
-                setNewProjectName('');
-                setNewProjectUrl('');
-                setNewProjectDesc('');
-                setDuplicateNameError('');
-                setShowCreateModal(false);
-            }
-        } catch (error: any) {
-            // Handle backend error (in case frontend check missed it)
-            if (error.message?.includes('already exists')) {
-                setDuplicateNameError(error.message);
-            }
-        } finally {
-            setIsCreating(false);
-        }
-    };
-
-    const handleNameChange = (value: string) => {
-        setNewProjectName(value);
-        // Clear duplicate error when user starts typing
-        if (duplicateNameError) {
-            setDuplicateNameError('');
-        }
-    };
 
     // Any authenticated user can create projects
     const canCreateProject = !!user;
@@ -129,7 +79,7 @@ const ProjectsListPage: React.FC = () => {
                 <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Projects</h1>
                 {canCreateProject && (
                     <button
-                        onClick={() => setShowCreateModal(true)}
+                        onClick={() => navigate('/projects/new')}
                         className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] text-white rounded-md hover:opacity-90 transition-smooth font-medium"
                     >
                         <Plus size={18} />
@@ -202,88 +152,8 @@ const ProjectsListPage: React.FC = () => {
                             : 'Create your first project to get started'
                     }
                     actionLabel={!searchQuery && filter === 'all' && canCreateProject ? 'Create Project' : undefined}
-                    onAction={!searchQuery && filter === 'all' && canCreateProject ? () => setShowCreateModal(true) : undefined}
+                    onAction={!searchQuery && filter === 'all' && canCreateProject ? () => navigate('/projects/new') : undefined}
                 />
-            )}
-
-            {/* Create Project Modal */}
-            {showCreateModal && (
-                <div 
-                    className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-                    onClick={() => setShowCreateModal(false)}
-                >
-                    <div 
-                        className="bg-white rounded-lg p-6 w-full max-w-md mx-4"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <h2 className="text-xl font-semibold mb-4">Create New Project</h2>
-                        <form onSubmit={handleCreateProject} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-                                    Project Name *
-                                </label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g., Company Website"
-                                    value={newProjectName}
-                                    onChange={(e) => handleNameChange(e.target.value)}
-                                    required
-                                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] ${
-                                        duplicateNameError 
-                                            ? 'border-red-500 focus:ring-red-500' 
-                                            : 'border-[var(--color-border)]'
-                                    }`}
-                                />
-                                {duplicateNameError && (
-                                    <p className="mt-1 text-sm text-red-600">{duplicateNameError}</p>
-                                )}
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-                                    Website URL *
-                                </label>
-                                <input
-                                    type="url"
-                                    placeholder="https://example.com"
-                                    value={newProjectUrl}
-                                    onChange={(e) => setNewProjectUrl(e.target.value)}
-                                    required
-                                    className="w-full px-3 py-2 border border-[var(--color-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-                                    Description (optional)
-                                </label>
-                                <textarea
-                                    rows={3}
-                                    placeholder="Brief description of the project..."
-                                    value={newProjectDesc}
-                                    onChange={(e) => setNewProjectDesc(e.target.value)}
-                                    className="w-full px-3 py-2 border border-[var(--color-border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                                />
-                            </div>
-                            <div className="flex gap-3 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCreateModal(false)}
-                                    disabled={isCreating}
-                                    className="flex-1 px-4 py-2 border border-[var(--color-border)] rounded-md text-[var(--color-text-secondary)] hover:bg-gray-50 transition-smooth disabled:opacity-50"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isCreating || !!duplicateNameError}
-                                    className="flex-1 px-4 py-2 bg-[var(--color-accent)] text-white rounded-md hover:opacity-90 transition-smooth disabled:opacity-50 flex items-center justify-center gap-2"
-                                >
-                                    {isCreating && <Loader2 size={16} className="animate-spin" />}
-                                    {isCreating ? 'Creating...' : 'Create Project'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
             )}
         </div>
     );

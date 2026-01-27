@@ -18,14 +18,15 @@ import { useProjectStore } from '../../stores/projectStore';
 const Sidebar: React.FC = () => {
     const location = useLocation();
     const { user, logout } = useAuth();
-    const { projects, fetchProjects } = useProjectStore();
+    const projects = useProjectStore(state => state.projects);
+    const fetchProjects = useProjectStore(state => state.fetchProjects);
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [projectsExpanded, setProjectsExpanded] = useState(true);
 
-    // Fetch projects on mount if not already loaded
+    // Fetch projects on mount if not already loaded (will use cache if available)
     useEffect(() => {
         if (projects.length === 0) {
-            fetchProjects();
+            fetchProjects(false); // false = use cache if available
         }
     }, []);
 
